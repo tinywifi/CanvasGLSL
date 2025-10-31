@@ -1,0 +1,48 @@
+# gradle
+
+.gradle/
+build/
+out/
+classes/
+run/
+logs/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# generated panoramas / misc text dumps
+*.txt
+
+# project-local tooling
+.claude/
+
+# eclipse
+
+*.launch
+
+# idea
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# vscode
+
+.settings/
+.vscode/
+bin/
+.classpath
+.project
+
+# macOS / Windows
+
+*.DS_Store
+Thumbs.db
+
+# archives / packaged outputs
+*.zip
+*.tar
+*.tar.gz

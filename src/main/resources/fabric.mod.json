@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "canvasglsl",
+  "version": "${version}",
+  "name": "CanvasGLSL",
+  "description": "Replace the Minecraft main menu panorama with custom GLSL shaders.",
+  "authors": [
+    "tinywifi"
+  ],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "sh.tinywifi.canvasglsl.CanvasGLSL"
+    ]
+  },
+  "mixins": [
+    "canvasglsl.mixins.json"
+  ],
+  "depends": {
+    "java": ">=21",
+    "minecraft": ">=1.21 <=1.21.10"
+  }
+}
