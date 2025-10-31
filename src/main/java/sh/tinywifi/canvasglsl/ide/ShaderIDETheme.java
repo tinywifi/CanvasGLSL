@@ -24,6 +24,10 @@ public enum ShaderIDETheme {
         public void apply() {
             ImGui.styleColorsDark();
             ImGuiStyle style = ImGui.getStyle();
+
+            // Force global alpha to 1.0 for fully opaque rendering
+            style.setAlpha(1.0f);
+
             style.setFrameRounding(4f);
             style.setWindowRounding(6f);
             style.setGrabRounding(4f);
@@ -55,6 +59,10 @@ public enum ShaderIDETheme {
         public void apply() {
             ImGui.styleColorsDark();
             ImGuiStyle style = ImGui.getStyle();
+
+            // Force global alpha to 1.0 for fully opaque rendering
+            style.setAlpha(1.0f);
+
             style.setFrameRounding(4f);
             style.setWindowRounding(4f);
             style.setGrabRounding(4f);
@@ -86,6 +94,10 @@ public enum ShaderIDETheme {
         public void apply() {
             ImGui.styleColorsDark();
             ImGuiStyle style = ImGui.getStyle();
+
+            // Force global alpha to 1.0 for fully opaque rendering
+            style.setAlpha(1.0f);
+
             style.setWindowRounding(6f);
             style.setFrameRounding(4f);
             style.setGrabRounding(4f);
@@ -117,6 +129,10 @@ public enum ShaderIDETheme {
         public void apply() {
             ImGui.styleColorsLight();
             ImGuiStyle style = ImGui.getStyle();
+
+            // Force global alpha to 1.0 for fully opaque rendering
+            style.setAlpha(1.0f);
+
             style.setFrameRounding(4f);
             style.setWindowRounding(4f);
             style.setGrabRounding(4f);
