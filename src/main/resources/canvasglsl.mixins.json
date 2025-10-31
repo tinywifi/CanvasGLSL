@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "package": "sh.tinywifi.canvasglsl.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MinecraftClientMixin",
+    "GameRendererMixin",
+    "MouseMixin",
+    "KeyboardMixin",
+    "TitleScreenMixin",
+    "WindowMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
+
+
