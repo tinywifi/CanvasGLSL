@@ -1,6 +1,7 @@
 package sh.tinywifi.canvasglsl.modules;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
 import sh.tinywifi.canvasglsl.ide.MediaChangeListener;
@@ -23,6 +24,8 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     private ShaderRenderer renderer;
     private final MediaRenderer mediaRenderer;
 
+    private long lastFpsDiagnosticMs = 0L;
+
     private boolean needsCompile = true;
     private boolean enabled = true;
     private boolean compileQueued;
@@ -38,10 +41,9 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         controller.addListener(this);
         controller.addMediaListener(this);
         controller.getCurrentMediaEntry().ifPresent(mediaRenderer::load);
-        if (enabled) {
-            logDiagnostic("Initializing shader background; compiling current shader");
-            compileCurrentShader();
-        }
+        compileQueued = false;
+        needsCompile = true;
+        logDiagnostic("Shader background initialized (enabled={})", enabled);
     }
 
     public void shutdown() {
@@ -54,7 +56,8 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         this.enabled = enabled;
         if (enabled) {
             logDiagnostic("Shader background enabled");
-            compileCurrentShader();
+            needsCompile = true;
+            compileQueued = false;
         } else {
             logDiagnostic("Shader background disabled; destroying renderer");
             destroyRenderer();
@@ -107,6 +110,20 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         int length = fragmentSource != null ? fragmentSource.length() : -1;
         logDiagnostic("Queued shader compile (length={} autoCompile={})",
             length, editorState.isAutoCompileEnabled());
+        logDiagnostic("Queued shader source: {}", describeCurrentShader());
+
+        if (RenderSystem.isOnRenderThread()) {
+            ShaderRenderer shaderRenderer = getOrCreateRenderer();
+            logDiagnostic("Immediate compile flush (on render thread) rendererPresent={}", shaderRenderer != null);
+            flushQueuedCompile(shaderRenderer);
+        } else {
+            logDiagnostic("Render thread not available yet; scheduling compile flush");
+            RenderSystem.recordRenderCall(() -> {
+                ShaderRenderer shaderRenderer = getOrCreateRenderer();
+                logDiagnostic("Render thread compile flush scheduled (rendererPresent={})", shaderRenderer != null);
+                flushQueuedCompile(shaderRenderer);
+            });
+        }
     }
 
     private void flushQueuedCompile(ShaderRenderer renderer) {
@@ -196,6 +213,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         if (shaderRenderer.isCompiled()) {
             shaderRenderer.render(width, height, alpha, 1.0);
             logDiagnostic("Shader draw completed for frame {}", frame);
+            logFpsDiagnostics(frame);
         } else {
             logDiagnostic("Shader renderer not compiled yet; nothing drawn this frame");
         }
@@ -219,6 +237,29 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         } else if (CanvasGLSL.LOG.isDebugEnabled()) {
             CanvasGLSL.LOG.debug(message, args);
         }
+    }
+
+    private void logFpsDiagnostics(long frame) {
+        if (!editorState.isDiagnosticLoggingEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastFpsDiagnosticMs < 1000) {
+            return;
+        }
+        lastFpsDiagnosticMs = now;
+        int fps = MinecraftClient.getInstance().getCurrentFps();
+        logDiagnostic("FPS={} frame={} shader={}", fps, frame, describeCurrentShader());
+    }
+
+    private String describeCurrentShader() {
+        return controller.getCurrentFile()
+            .map(Path::getFileName)
+            .map(Path::toString)
+            .orElseGet(() -> {
+                ShaderPresets preset = editorState.getActivePreset();
+                return preset != null ? "Preset:" + preset.name() : "<unsaved>";
+            });
     }
 }
 

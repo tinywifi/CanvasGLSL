@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 import imgui.ImFontAtlas;
 import imgui.ImGui;
 import imgui.ImGuiIO;
+import imgui.ImGuiStyle;
 import imgui.flag.ImGuiConfigFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
@@ -75,6 +76,12 @@ public final class ImGuiManager {
         float scale = (float) computeScaleFactor(window);
         io.setDisplayFramebufferScale(scale, scale);
 
+        // Defensively ensure global alpha is always 1.0 to prevent transparency issues
+        ImGuiStyle style = ImGui.getStyle();
+        if (style.getAlpha() < 0.99f) {
+            style.setAlpha(1.0f);
+        }
+
         glfw.newFrame();
         gl3.newFrame();
         ImGui.newFrame();
@@ -89,6 +96,9 @@ public final class ImGuiManager {
         // Clear any residual OpenGL state from previous renders
         GL20C.glUseProgram(0);
         GL30C.glBindVertexArray(0);
+
+        // Ensure color mask is fully enabled for all channels (RGBA)
+        GL11C.glColorMask(true, true, true, true);
 
         GL11C.glDisable(GL11C.GL_DEPTH_TEST);
         GL11C.glDepthMask(false);
