@@ -9,7 +9,9 @@ import imgui.glfw.ImGuiImplGlfw;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.Window;
 import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL13C;
 import org.lwjgl.opengl.GL14C;
+import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
 
@@ -108,6 +110,10 @@ public final class ImGuiManager {
         boolean scissorEnabled = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
         int prevProgram = GL20C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
         int prevVAO = GL30C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
+        int prevArrayBuffer = GL20C.glGetInteger(GL20C.GL_ARRAY_BUFFER_BINDING);
+        int prevElementArrayBuffer = GL11C.glGetInteger(GL15C.GL_ELEMENT_ARRAY_BUFFER_BINDING);
+        int prevTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+        int prevActiveTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
 
         // Set up state for ImGui rendering
         GL20C.glUseProgram(0);
@@ -117,6 +123,9 @@ public final class ImGuiManager {
         GL11C.glDepthMask(false);
         GL11C.glEnable(GL11C.GL_BLEND);
         GL11C.glBlendFunc(GL11C.GL_SRC_ALPHA, GL11C.GL_ONE_MINUS_SRC_ALPHA);
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+        GL20C.glBindBuffer(GL20C.GL_ARRAY_BUFFER, 0);
+        GL15C.glBindBuffer(GL15C.GL_ELEMENT_ARRAY_BUFFER, 0);
 
         // Render ImGui
         ImGui.render();
@@ -143,6 +152,10 @@ public final class ImGuiManager {
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
         }
 
+        GL13C.glActiveTexture(prevActiveTexture);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, prevTexture);
+        GL20C.glBindBuffer(GL20C.GL_ARRAY_BUFFER, prevArrayBuffer);
+        GL15C.glBindBuffer(GL15C.GL_ELEMENT_ARRAY_BUFFER, prevElementArrayBuffer);
         GL30C.glBindVertexArray(prevVAO);
         GL20C.glUseProgram(prevProgram);
 
