@@ -116,9 +116,12 @@ public final class ShaderCanvas implements Closeable {
     public void blit(float alpha) {
         RenderSystem.assertOnRenderThread();
 
+        int prevFramebufferBinding = -1;
+
         // CRITICAL FIX: Optionally force blit to the main framebuffer when needed
         // This ensures the shader background is visible even if an intermediate buffer was bound
         if (forceMainFramebuffer) {
+            prevFramebufferBinding = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
             GpuTexture outputColor = output.getColorAttachment();
             if (!(outputColor instanceof GlTexture outputGlTexture)) {
                 return;
@@ -177,6 +180,10 @@ public final class ShaderCanvas implements Closeable {
             GL11.glEnable(GL11.GL_DEPTH_TEST);
         } else {
             GL11.glDisable(GL11.GL_DEPTH_TEST);
+        }
+
+        if (forceMainFramebuffer && prevFramebufferBinding != -1) {
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, prevFramebufferBinding);
         }
     }
 
