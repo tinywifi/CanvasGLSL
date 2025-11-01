@@ -37,15 +37,7 @@ public final class OverlayRenderer {
         int fps = mc.getCurrentFps();
         String text = fps + " FPS";
 
-        int color;
-        if (fps < 30) {
-            color = 0xFF5555; // Red
-        } else if (fps < 60) {
-            color = 0xFFFF55; // Yellow
-        } else {
-            color = 0x55FF55; // Green
-        }
-
+        int color = 0xFFFFFFFF; // Bright white for readability
         int textWidth = font.getWidth(text);
         int textX = screen.width - textWidth - 4;
         int baseline = screen.height - font.fontHeight - 26; // aim slightly above Mojang copyright
