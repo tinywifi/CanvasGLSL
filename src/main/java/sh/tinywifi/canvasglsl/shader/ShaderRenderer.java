@@ -11,6 +11,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
@@ -308,6 +309,8 @@ public class ShaderRenderer {
         int targetWidth = Math.max(1, (int) Math.round(framebufferWidth * quality));
         int targetHeight = Math.max(1, (int) Math.round(framebufferHeight * quality));
 
+        RenderSystem.backupProjectionMatrix();
+
         IntBuffer viewportBuffer = BufferUtils.createIntBuffer(4);
         GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewportBuffer);
         int prevViewportX = viewportBuffer.get(0);
@@ -348,6 +351,7 @@ public class ShaderRenderer {
         int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int prevVAO = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
         int prevTexture2D = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        int prevArrayBuffer = GL15.glGetInteger(GL15.GL_ARRAY_BUFFER_BINDING);
 
         canvas.resize(targetWidth, targetHeight);
         canvas.write();
@@ -552,10 +556,12 @@ public class ShaderRenderer {
             // Restore texture state
             GL13.glActiveTexture(prevActiveTexture);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture2D);
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, prevArrayBuffer);
 
             // Restore shader program
             GL20.glUseProgram(prevProgram);
             GL30.glBindVertexArray(prevVAO);
+            RenderSystem.restoreProjectionMatrix();
         }
     }
     private float resolvePanoramaSpeed() {
