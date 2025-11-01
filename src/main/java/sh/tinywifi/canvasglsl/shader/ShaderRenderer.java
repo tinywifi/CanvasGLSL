@@ -315,6 +315,23 @@ public class ShaderRenderer {
         int prevViewportWidth = viewportBuffer.get(2);
         int prevViewportHeight = viewportBuffer.get(3);
 
+        IntBuffer scissorBuffer = BufferUtils.createIntBuffer(4);
+        GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, scissorBuffer);
+        int prevScissorX = scissorBuffer.get(0);
+        int prevScissorY = scissorBuffer.get(1);
+        int prevScissorWidth = scissorBuffer.get(2);
+        int prevScissorHeight = scissorBuffer.get(3);
+        boolean scissorEnabled = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+
+        java.nio.ByteBuffer colorMaskBuffer = BufferUtils.createByteBuffer(4);
+        GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, colorMaskBuffer);
+        boolean prevColorMaskRed = colorMaskBuffer.get(0) != 0;
+        boolean prevColorMaskGreen = colorMaskBuffer.get(1) != 0;
+        boolean prevColorMaskBlue = colorMaskBuffer.get(2) != 0;
+        boolean prevColorMaskAlpha = colorMaskBuffer.get(3) != 0;
+
+        boolean framebufferSrgbEnabled = GL11.glIsEnabled(GL30.GL_FRAMEBUFFER_SRGB);
+
         boolean depthTestEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
         boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
@@ -337,12 +354,19 @@ public class ShaderRenderer {
         GL11.glViewport(0, 0, targetWidth, targetHeight);
 
         try {
-            // Disable depth test and enable blending
+            // Disable depth test, scissor and enable blending for fullscreen quad
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDepthMask(false);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL11.glDisable(GL11.GL_CULL_FACE);
+            if (scissorEnabled) {
+                GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            }
+            GL11.glColorMask(true, true, true, true);
+            if (framebufferSrgbEnabled) {
+                GL11.glDisable(GL30.GL_FRAMEBUFFER_SRGB);
+            }
 
             GL20.glUseProgram(shaderProgram);
 
@@ -505,6 +529,24 @@ public class ShaderRenderer {
                 GL11.glEnable(GL11.GL_CULL_FACE);
             } else {
                 GL11.glDisable(GL11.GL_CULL_FACE);
+            }
+
+            // Restore colour mask
+            GL11.glColorMask(prevColorMaskRed, prevColorMaskGreen, prevColorMaskBlue, prevColorMaskAlpha);
+
+            // Restore framebuffer sRGB state
+            if (framebufferSrgbEnabled) {
+                GL11.glEnable(GL30.GL_FRAMEBUFFER_SRGB);
+            } else {
+                GL11.glDisable(GL30.GL_FRAMEBUFFER_SRGB);
+            }
+
+            // Restore scissor test and box
+            GL11.glScissor(prevScissorX, prevScissorY, prevScissorWidth, prevScissorHeight);
+            if (scissorEnabled) {
+                GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            } else {
+                GL11.glDisable(GL11.GL_SCISSOR_TEST);
             }
 
             // Restore texture state
