@@ -39,7 +39,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     private int previousMaxFps = 0;
 
     // Matches the "Unlimited" setting exposed by Minecraft's max framerate slider.
-    private static final int FPS_UNLOCK_VALUE = 260;
+    public static final int FPS_UNLOCK_VALUE = 260;
 
     public ShaderBackground() {
         this.controller = CanvasGLSL.IDE;
@@ -301,24 +301,32 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             return;
         }
 
-        if (!framerateOverrideApplied) {
-            var options = mc.options;
-            if (options == null) {
-                return;
-            }
+        var options = mc.options;
+        if (options == null) {
+            return;
+        }
 
+        boolean overrideEnabled = editorState.isFramerateOverrideEnabled();
+        if (!overrideEnabled) {
+            restoreFramerateOverride();
+            return;
+        }
+
+        if (!framerateOverrideApplied) {
             previousMaxFps = options.getMaxFps().getValue();
             previousVsync = options.getEnableVsync().getValue();
-
             framerateOverrideApplied = true;
-
-            options.getEnableVsync().setValue(false);
-            options.getMaxFps().setValue(FPS_UNLOCK_VALUE);
         }
+
+        int desiredFps = Math.max(30, Math.min(FPS_UNLOCK_VALUE, editorState.getFramerateLimit()));
+        boolean disableVsync = editorState.isDisableVsyncDuringOverride();
+
+        options.getMaxFps().setValue(desiredFps);
+        options.getEnableVsync().setValue(!disableVsync);
 
         Window window = mc.getWindow();
         if (window != null) {
-            window.setVsync(false);
+            window.setVsync(!disableVsync);
         }
     }
 

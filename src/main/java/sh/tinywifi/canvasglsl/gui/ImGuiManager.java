@@ -279,8 +279,9 @@ public final class ImGuiManager {
             GL11C.glColorMask(colorMaskRed, colorMaskGreen, colorMaskBlue, colorMaskAlpha);
             GL11C.glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
             GL11C.glScissor(scissorX, scissorY, scissorWidth, scissorHeight);
-            GL11C.glPolygonMode(GL11C.GL_FRONT, polygonModeFront);
-            GL11C.glPolygonMode(GL11C.GL_BACK, polygonModeBack);
+            // Core profile forbids GL_POLYGON_MODE with separate faces; apply a unified mode.
+            int polygonMode = polygonModeFront;
+            GL11C.glPolygonMode(GL11C.GL_FRONT_AND_BACK, polygonMode);
 
             GL30C.glBindVertexArray(lastVertexArray);
             GL15C.glBindBuffer(GL15C.GL_ARRAY_BUFFER, lastArrayBuffer);

@@ -55,6 +55,9 @@ public final class ShaderIDEViewport {
     private final ImBoolean autoCompileToggle = new ImBoolean(true);
     private final ImBoolean autoSaveToggle = new ImBoolean(false);
     private final ImBoolean diagnosticLoggingToggle = new ImBoolean(false);
+    private final ImBoolean framerateOverrideToggle = new ImBoolean(true);
+    private final ImBoolean disableVsyncToggle = new ImBoolean(true);
+    private final int[] framerateLimitBuffer = new int[]{120};
     private final float[] fontScale = new float[]{1.0f};
 
     private boolean openNewFilePopup;
@@ -236,6 +239,30 @@ public final class ShaderIDEViewport {
             editorState.setDiagnosticLogging(diagnosticLoggingToggle.get());
             CanvasGLSL.LOG.info("CanvasGLSL diagnostic logging {}", diagnosticLoggingToggle.get() ? "enabled" : "disabled");
             editorState.setStatus("Diagnostic logging " + (diagnosticLoggingToggle.get() ? "enabled" : "disabled"));
+        }
+
+        framerateOverrideToggle.set(editorState.isFramerateOverrideEnabled());
+        if (ImGui.checkbox("Override menu frame rate", framerateOverrideToggle)) {
+            editorState.setFramerateOverrideEnabled(framerateOverrideToggle.get());
+            editorState.setStatus(framerateOverrideToggle.get()
+                ? "Menu frame rate override enabled"
+                : "Menu frame rate override disabled");
+        }
+
+        if (framerateOverrideToggle.get()) {
+            framerateLimitBuffer[0] = editorState.getFramerateLimit();
+            if (ImGui.sliderInt("Menu FPS limit", framerateLimitBuffer, 30, ShaderBackground.FPS_UNLOCK_VALUE, "%d FPS")) {
+                editorState.setFramerateLimit(framerateLimitBuffer[0]);
+                editorState.setStatus("Menu FPS limit set to " + framerateLimitBuffer[0]);
+            }
+
+            disableVsyncToggle.set(editorState.isDisableVsyncDuringOverride());
+            if (ImGui.checkbox("Disable VSync while shader runs", disableVsyncToggle)) {
+                editorState.setDisableVsyncDuringOverride(disableVsyncToggle.get());
+                editorState.setStatus(disableVsyncToggle.get()
+                    ? "VSync disabled for menu shader"
+                    : "VSync enabled for menu shader");
+            }
         }
 
         fontScale[0] = editorState.getFontScale();

@@ -2,6 +2,7 @@ package sh.tinywifi.canvasglsl.ide;
 
 import imgui.type.ImString;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
+import sh.tinywifi.canvasglsl.modules.ShaderBackground;
 import sh.tinywifi.canvasglsl.shader.ShaderPresets;
 
 import java.nio.file.Path;
@@ -27,6 +28,9 @@ public final class ShaderEditorState {
     private boolean autoCompile = true;
     private boolean autoSave = false;
     private boolean diagnosticLogging = false;
+    private boolean framerateOverrideEnabled = true;
+    private int framerateLimit = 120;
+    private boolean disableVsyncDuringOverride = true;
     private float fontScale = 1.0f;
     private ShaderPresets activePreset = ShaderPresets.TRIPPY;
 
@@ -170,6 +174,30 @@ public final class ShaderEditorState {
 
     public void setDiagnosticLogging(boolean enabled) {
         this.diagnosticLogging = enabled;
+    }
+
+    public boolean isFramerateOverrideEnabled() {
+        return framerateOverrideEnabled;
+    }
+
+    public void setFramerateOverrideEnabled(boolean enabled) {
+        this.framerateOverrideEnabled = enabled;
+    }
+
+    public int getFramerateLimit() {
+        return framerateLimit;
+    }
+
+    public void setFramerateLimit(int limit) {
+        this.framerateLimit = Math.max(30, Math.min(ShaderBackground.FPS_UNLOCK_VALUE, limit));
+    }
+
+    public boolean isDisableVsyncDuringOverride() {
+        return disableVsyncDuringOverride;
+    }
+
+    public void setDisableVsyncDuringOverride(boolean disable) {
+        this.disableVsyncDuringOverride = disable;
     }
 
     public float getFontScale() {
