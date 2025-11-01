@@ -9,6 +9,7 @@ import imgui.glfw.ImGuiImplGlfw;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.Window;
 import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL14C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
 
@@ -96,27 +97,54 @@ public final class ImGuiManager {
     public void endFrame() {
         if (!initialised || !frameActive) return;
 
-        // Clear any residual OpenGL state from previous renders
+        // Save OpenGL state before ImGui rendering
+        boolean blendEnabled = GL11C.glIsEnabled(GL11C.GL_BLEND);
+        int prevBlendSrcRgb = GL11C.glGetInteger(GL14C.GL_BLEND_SRC_RGB);
+        int prevBlendDstRgb = GL11C.glGetInteger(GL14C.GL_BLEND_DST_RGB);
+        int prevBlendSrcAlpha = GL11C.glGetInteger(GL14C.GL_BLEND_SRC_ALPHA);
+        int prevBlendDstAlpha = GL11C.glGetInteger(GL14C.GL_BLEND_DST_ALPHA);
+        boolean depthTestEnabled = GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST);
+        boolean depthMaskEnabled = GL11C.glGetBoolean(GL11C.GL_DEPTH_WRITEMASK);
+        boolean scissorEnabled = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
+        int prevProgram = GL20C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+        int prevVAO = GL30C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
+
+        // Set up state for ImGui rendering
         GL20C.glUseProgram(0);
         GL30C.glBindVertexArray(0);
-
-        // Ensure color mask is fully enabled for all channels (RGBA)
         GL11C.glColorMask(true, true, true, true);
-
         GL11C.glDisable(GL11C.GL_DEPTH_TEST);
         GL11C.glDepthMask(false);
         GL11C.glEnable(GL11C.GL_BLEND);
         GL11C.glBlendFunc(GL11C.GL_SRC_ALPHA, GL11C.GL_ONE_MINUS_SRC_ALPHA);
 
+        // Render ImGui
         ImGui.render();
         gl3.renderDrawData(ImGui.getDrawData());
 
-        GL11C.glDisable(GL11C.GL_BLEND);
-        GL11C.glDepthMask(true);
-        GL11C.glEnable(GL11C.GL_DEPTH_TEST);
-        GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
-        GL30C.glBindVertexArray(0);
-        GL20C.glUseProgram(0);
+        // Restore OpenGL state for Minecraft UI
+        if (blendEnabled) {
+            GL11C.glEnable(GL11C.GL_BLEND);
+        } else {
+            GL11C.glDisable(GL11C.GL_BLEND);
+        }
+        GL14C.glBlendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
+
+        if (depthTestEnabled) {
+            GL11C.glEnable(GL11C.GL_DEPTH_TEST);
+        } else {
+            GL11C.glDisable(GL11C.GL_DEPTH_TEST);
+        }
+        GL11C.glDepthMask(depthMaskEnabled);
+
+        if (scissorEnabled) {
+            GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
+        } else {
+            GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
+        }
+
+        GL30C.glBindVertexArray(prevVAO);
+        GL20C.glUseProgram(prevProgram);
 
         frameActive = false;
     }
@@ -132,4 +160,3 @@ public final class ImGuiManager {
         return initialised;
     }
 }
-
