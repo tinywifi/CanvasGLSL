@@ -34,21 +34,39 @@ public final class ImGuiManager {
     /**
      * Lazy initialisation guard. ImGui is brought online the first time we need to render any GUI widgets.
      */
-    public void init(long windowHandle) {
+    public synchronized void init(long windowHandle) {
         if (initialised) return;
 
-        ImGui.createContext();
-        final ImGuiIO io = ImGui.getIO();
-        io.setIniFilename(null); // Avoid writing imgui.ini into the user's folder
-        io.addConfigFlags(ImGuiConfigFlags.DockingEnable);
+        try {
+            // Save current OpenGL state to prevent conflicts with shader rendering
+            int prevProgram = GL20C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
+            int prevVAO = GL30C.glGetInteger(GL30C.GL_VERTEX_ARRAY_BINDING);
+            int prevArrayBuffer = GL20C.glGetInteger(GL20C.GL_ARRAY_BUFFER_BINDING);
+            int prevTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
 
-        final ImFontAtlas fonts = io.getFonts();
-        fonts.addFontDefault();
+            ImGui.createContext();
+            final ImGuiIO io = ImGui.getIO();
+            io.setIniFilename(null); // Avoid writing imgui.ini into the user's folder
+            io.addConfigFlags(ImGuiConfigFlags.DockingEnable);
 
-        glfw.init(windowHandle, true);
-        gl3.init();  // Let imgui-java auto-detect the GL version
+            final ImFontAtlas fonts = io.getFonts();
+            fonts.addFontDefault();
 
-        initialised = true;
+            glfw.init(windowHandle, true);
+            gl3.init();  // Let imgui-java auto-detect the GL version
+
+            // Restore previous OpenGL state
+            GL20C.glUseProgram(prevProgram);
+            GL30C.glBindVertexArray(prevVAO);
+            GL20C.glBindBuffer(GL20C.GL_ARRAY_BUFFER, prevArrayBuffer);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, prevTexture);
+
+            initialised = true;
+        } catch (Exception e) {
+            // If initialization fails, ensure we can retry later
+            initialised = false;
+            throw new RuntimeException("Failed to initialize ImGui", e);
+        }
     }
 
     public boolean beginFrame() {

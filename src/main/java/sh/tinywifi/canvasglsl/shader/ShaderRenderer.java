@@ -12,6 +12,7 @@ import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
 import sh.tinywifi.canvasglsl.render.GlobalState;
 import sh.tinywifi.canvasglsl.render.ShaderCanvas;
@@ -54,6 +55,9 @@ public class ShaderRenderer {
     private int iResolutionUniform = -1;
     private int iMouseUniform = -1;
     private int iFrameUniform = -1;
+    private int iTimeDeltaUniform = -1;
+    private int iDateUniform = -1;
+    private int iSampleRateUniform = -1;
     private final int[] channelUniforms = new int[4];
     private final int[] channelResolutionUniforms = new int[4];
     private final int[] channelTimeUniforms = new int[4];
@@ -67,11 +71,13 @@ public class ShaderRenderer {
     private final MinecraftClient mc;
     private long startTimeNanos;
     private long frameCounter = 0;
+    private long lastFrameNanos = 0;
     private boolean panoramaSpeedChecked;
     private Method panoramaSpeedMethod;
     private double lastMouseClickX;
     private double lastMouseClickY;
     private boolean lastMouseDown;
+    private boolean hasLoggedCompilationError = false;
 
     private static final String DEFAULT_VERTEX_SHADER = """
         #version 330 core
@@ -105,7 +111,6 @@ public class ShaderRenderer {
             return;
         }
         quad = FullscreenQuad.create();
-        CanvasGLSL.LOG.info("Initialized shader quad buffer");
     }
 
     private void initializeChannelTextures() {
@@ -118,7 +123,8 @@ public class ShaderRenderer {
             channelHeights[i] = size;
 
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, channelTextures[i]);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            // Use LINEAR_MIPMAP_LINEAR for better quality when textures are viewed at different scales
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_REPEAT);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_REPEAT);
@@ -167,10 +173,11 @@ public class ShaderRenderer {
             data.flip();
 
             GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, size, size, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, data);
+            // Generate mipmaps for better texture quality
+            GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
         }
 
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-        CanvasGLSL.LOG.info("Initialized {} fallback shader channels ({}x{})", channelTextures.length, size, size);
     }
 
     public boolean compileShader(String fragmentSource) {
@@ -181,28 +188,20 @@ public class ShaderRenderer {
         RenderSystem.assertOnRenderThread();
         ensureInitialized();
         cleanupShader();
+        hasLoggedCompilationError = false; // Reset flag for new compilation attempt
 
         try {
-            CanvasGLSL.LOG.info("=== COMPILING SHADER ===");
-            CanvasGLSL.LOG.info("Vertex shader source:\n{}", vertexSource);
-            CanvasGLSL.LOG.info("Fragment shader source:\n{}", fragmentSource);
-
             // Patch shaders for compatibility
-            String processedVertex = ShaderPatcher.patch(vertexSource);
-            String processedFragment = ShaderPatcher.patch(fragmentSource);
-
-            CanvasGLSL.LOG.info("Processed vertex shader:\n{}", processedVertex);
-            CanvasGLSL.LOG.info("Processed fragment shader:\n{}", processedFragment);
+            String processedVertex = ShaderPatcher.patchVertex(vertexSource);
+            String processedFragment = ShaderPatcher.patchFragment(fragmentSource);
 
             // Compile vertex shader
             vertexShader = compileShaderPart(processedVertex, GL20.GL_VERTEX_SHADER);
             if (vertexShader == -1) return false;
-            CanvasGLSL.LOG.info("Vertex shader compiled, ID: {}", vertexShader);
 
             // Compile fragment shader
             fragmentShader = compileShaderPart(processedFragment, GL20.GL_FRAGMENT_SHADER);
             if (fragmentShader == -1) return false;
-            CanvasGLSL.LOG.info("Fragment shader compiled, ID: {}", fragmentShader);
 
             // Link program
             shaderProgram = GL20.glCreateProgram();
@@ -215,8 +214,6 @@ public class ShaderRenderer {
                 CanvasGLSL.LOG.error("Failed to link shader program! Caused by: {}", log);
                 return false;
             }
-
-            CanvasGLSL.LOG.info("Shader program linked, ID: {}", shaderProgram);
 
             // Free now unused resources
             GL20.glDeleteShader(vertexShader);
@@ -235,6 +232,9 @@ public class ShaderRenderer {
             iResolutionUniform = GL20.glGetUniformLocation(shaderProgram, "iResolution");
             iMouseUniform = GL20.glGetUniformLocation(shaderProgram, "iMouse");
             iFrameUniform = GL20.glGetUniformLocation(shaderProgram, "iFrame");
+            iTimeDeltaUniform = GL20.glGetUniformLocation(shaderProgram, "iTimeDelta");
+            iDateUniform = GL20.glGetUniformLocation(shaderProgram, "iDate");
+            iSampleRateUniform = GL20.glGetUniformLocation(shaderProgram, "iSampleRate");
             for (int i = 0; i < channelUniforms.length; i++) {
                 channelUniforms[i] = -1;
                 channelResolutionUniforms[i] = -1;
@@ -246,27 +246,7 @@ public class ShaderRenderer {
                 channelTimeUniforms[i] = GL20.glGetUniformLocation(shaderProgram, "iChannelTime[" + i + "]");
             }
 
-            CanvasGLSL.LOG.info("Uniform locations:");
-            CanvasGLSL.LOG.info("  time: {}", timeUniform);
-            CanvasGLSL.LOG.info("  resolution: {}", resolutionUniform);
-            CanvasGLSL.LOG.info("  mouse: {}", mouseUniform);
-            CanvasGLSL.LOG.info("  frame: {}", frameUniform);
-            CanvasGLSL.LOG.info("  persistent_frame: {}", persistentFrameUniform);
-            CanvasGLSL.LOG.info("  speed: {}", speedUniform);
-            CanvasGLSL.LOG.info("  iTime: {}", iTimeUniform);
-            CanvasGLSL.LOG.info("  iResolution: {}", iResolutionUniform);
-            CanvasGLSL.LOG.info("  iMouse: {}", iMouseUniform);
-            CanvasGLSL.LOG.info("  iFrame: {}", iFrameUniform);
-            for (int i = 0; i < channelUniforms.length; i++) {
-                CanvasGLSL.LOG.info("  iChannel{}: {} (resolution {} time {})",
-                    i,
-                    channelUniforms[i],
-                    channelResolutionUniforms[i],
-                    channelTimeUniforms[i]);
-            }
-
             CanvasGLSL.LOG.info("Shader compiled successfully");
-            CanvasGLSL.LOG.info("=== END COMPILATION ===");
             return true;
 
         } catch (Exception e) {
@@ -284,7 +264,12 @@ public class ShaderRenderer {
         if (GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
             String log = GL20.glGetShaderInfoLog(shader, 1024);
             String shaderType = (type == GL20.GL_VERTEX_SHADER) ? "vertex" : "fragment";
-            CanvasGLSL.LOG.error("Failed to compile {} shader! Caused by: {}", shaderType, log);
+
+            // Only log once per compilation attempt (prevent spam)
+            if (!hasLoggedCompilationError) {
+                CanvasGLSL.LOG.error("Failed to compile {} shader! Caused by: {}", shaderType, log);
+                hasLoggedCompilationError = true;
+            }
             return -1;
         }
 
@@ -323,12 +308,6 @@ public class ShaderRenderer {
         int targetWidth = Math.max(1, (int) Math.round(framebufferWidth * quality));
         int targetHeight = Math.max(1, (int) Math.round(framebufferHeight * quality));
 
-        if (frameCounter % 60 == 0) {
-            CanvasGLSL.LOG.info("=== RENDER DEBUG (Frame {}) ===", frameCounter);
-            CanvasGLSL.LOG.info("Viewport: {}x{}, Alpha: {}", targetWidth, targetHeight, alpha);
-            CanvasGLSL.LOG.info("Shader Program ID: {}", shaderProgram);
-        }
-
         IntBuffer viewportBuffer = BufferUtils.createIntBuffer(4);
         GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewportBuffer);
         int prevViewportX = viewportBuffer.get(0);
@@ -347,16 +326,17 @@ public class ShaderRenderer {
         int prevBlendEqRgb = GL11.glGetInteger(GL_BLEND_EQUATION_RGB);
         int prevBlendEqAlpha = GL11.glGetInteger(GL_BLEND_EQUATION_ALPHA);
 
+        // Save additional state that complex shaders might modify
+        int prevActiveTexture = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
+        int prevVAO = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+        int prevTexture2D = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+
         canvas.resize(targetWidth, targetHeight);
         canvas.write();
         GL11.glViewport(0, 0, targetWidth, targetHeight);
 
         try {
-            int error = GL11.glGetError();
-            if (error != GL11.GL_NO_ERROR) {
-                CanvasGLSL.LOG.warn("OpenGL error before render: {}", error);
-            }
-
             // Disable depth test and enable blending
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDepthMask(false);
@@ -368,9 +348,6 @@ public class ShaderRenderer {
 
             long nowNanos = System.nanoTime();
             float currentTime = (nowNanos - startTimeNanos) / 1_000_000_000f;
-            if (frameCounter % 60 == 0) {
-                CanvasGLSL.LOG.info("Timing debug: now={}ns start={}ns elapsed={}s", nowNanos, startTimeNanos, currentTime);
-            }
             if (timeUniform != -1) {
                 GL20.glUniform1f(timeUniform, currentTime);
             }
@@ -434,6 +411,29 @@ public class ShaderRenderer {
                 GL20.glUniform1f(speedUniform, resolvePanoramaSpeed());
             }
 
+            // Calculate time delta for iTimeDelta uniform
+            float timeDelta = lastFrameNanos > 0 ? (nowNanos - lastFrameNanos) / 1_000_000_000f : 0.0f;
+            lastFrameNanos = nowNanos;
+            if (iTimeDeltaUniform != -1) {
+                GL20.glUniform1f(iTimeDeltaUniform, timeDelta);
+            }
+
+            // Set iDate uniform (year, month [0-11], day, time in seconds)
+            if (iDateUniform != -1) {
+                java.time.LocalDateTime now = java.time.LocalDateTime.now();
+                float timeOfDay = now.getHour() * 3600f + now.getMinute() * 60f + now.getSecond() + now.getNano() / 1_000_000_000f;
+                GL20.glUniform4f(iDateUniform,
+                    now.getYear(),
+                    now.getMonthValue() - 1,  // Shadertoy uses 0-11 for months
+                    now.getDayOfMonth(),
+                    timeOfDay);
+            }
+
+            // Set iSampleRate uniform (standard audio sample rate)
+            if (iSampleRateUniform != -1) {
+                GL20.glUniform1f(iSampleRateUniform, 44100.0f);
+            }
+
             for (int channel = 0; channel < channelUniforms.length; channel++) {
                 if (channelUniforms[channel] != -1 && channelTextures[channel] != 0) {
                     GL13.glActiveTexture(GL13.GL_TEXTURE0 + channel);
@@ -464,28 +464,33 @@ public class ShaderRenderer {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
-            if (frameCounter % 60 == 0) {
-                CanvasGLSL.LOG.info("Uniform values:");
-                CanvasGLSL.LOG.info("  time: {}", currentTime);
-                CanvasGLSL.LOG.info("  resolution: {}x{}", targetWidth, targetHeight);
-                CanvasGLSL.LOG.info("  frame: {}", frameCounter);
-            }
-
             quad.bind();
             quad.draw();
             FullscreenQuad.unbind();
 
             GL20.glUseProgram(0);
 
-            int postError = GL11.glGetError();
-            if (postError != GL11.GL_NO_ERROR) {
-                CanvasGLSL.LOG.error("OpenGL error after render: {}", postError);
-            }
-
             frameCounter++;
         } catch (Exception e) {
             CanvasGLSL.LOG.error("Error during shader rendering", e);
         } finally {
+            // Restore all OpenGL state to prevent UI corruption
+            GL20.glUseProgram(0);
+            GL30.glBindVertexArray(0);
+
+            // Reset color mask to ensure UI renders correctly (critical!)
+            GL11.glColorMask(true, true, true, true);
+
+            // Unbind all textures
+            for (int i = 0; i < 5; i++) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            }
+
+            // Restore previous texture bindings
+            GL13.glActiveTexture(prevActiveTexture);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture2D);
+
             // Restore blend state
             GL14.glBlendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
             GL20.glBlendEquationSeparate(prevBlendEqRgb, prevBlendEqAlpha);
@@ -512,6 +517,10 @@ public class ShaderRenderer {
                 canvas.blit(alpha);
             }
             GL11.glViewport(prevViewportX, prevViewportY, prevViewportWidth, prevViewportHeight);
+
+            // Final cleanup - ensure program and VAO are unbound
+            GL20.glUseProgram(prevProgram);
+            GL30.glBindVertexArray(prevVAO);
         }
     }
     private float resolvePanoramaSpeed() {
@@ -585,9 +594,20 @@ public class ShaderRenderer {
         return shaderProgram != -1;
     }
 
+    public ShaderCanvas getCanvas() {
+        return canvas;
+    }
+
     public void resetTime() {
         this.startTimeNanos = System.nanoTime();
-        CanvasGLSL.LOG.info("ShaderRenderer time reset; new start={}ns", startTimeNanos);
         this.frameCounter = 0;
+    }
+
+    public long getStartTimeNanos() {
+        return startTimeNanos;
+    }
+
+    public long getFrameCounter() {
+        return frameCounter;
     }
 }

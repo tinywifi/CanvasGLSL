@@ -29,6 +29,7 @@ public final class ShaderCanvas implements Closeable {
     private final FullscreenQuad blitQuad;
     private final int blitProgram;
     private final int blitAlphaUniform;
+    private boolean forceMainFramebuffer = false;
 
     private static final String BLIT_VERTEX_SHADER = """
         #version 330 core
@@ -108,22 +109,28 @@ public final class ShaderCanvas implements Closeable {
         }
     }
 
+    public void setForceMainFramebuffer(boolean force) {
+        this.forceMainFramebuffer = force;
+    }
+
     public void blit(float alpha) {
         RenderSystem.assertOnRenderThread();
 
-        // CRITICAL FIX: Always blit to the main framebuffer (output), not whatever was previously bound
-        // This ensures the shader background is visible even if an intermediate buffer was bound during rendering
-        GpuTexture outputColor = output.getColorAttachment();
-        if (!(outputColor instanceof GlTexture outputGlTexture)) {
-            return;
+        // CRITICAL FIX: Optionally force blit to the main framebuffer when needed
+        // This ensures the shader background is visible even if an intermediate buffer was bound
+        if (forceMainFramebuffer) {
+            GpuTexture outputColor = output.getColorAttachment();
+            if (!(outputColor instanceof GlTexture outputGlTexture)) {
+                return;
+            }
+            var device = RenderSystem.getDevice();
+            if (!(device instanceof GlBackend backend)) {
+                return;
+            }
+            BufferManager buffers = backend.getBufferManager();
+            int outputFboId = outputGlTexture.getOrCreateFramebuffer(buffers, output.getDepthAttachment());
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, outputFboId);
         }
-        var device = RenderSystem.getDevice();
-        if (!(device instanceof GlBackend backend)) {
-            return;
-        }
-        BufferManager buffers = backend.getBufferManager();
-        int outputFboId = outputGlTexture.getOrCreateFramebuffer(buffers, output.getDepthAttachment());
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, outputFboId);
 
         GpuTexture colorAttachment = input.getColorAttachment();
         if (!(colorAttachment instanceof GlTexture glTexture)) {

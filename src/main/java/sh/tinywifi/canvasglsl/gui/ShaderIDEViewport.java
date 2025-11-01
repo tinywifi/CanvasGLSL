@@ -73,9 +73,20 @@ public final class ShaderIDEViewport {
     public void ensureReady() {
         ImGuiManager gui = ImGuiManager.get();
         MinecraftClient client = MinecraftClient.getInstance();
+
+        // Safety check: Don't initialize if still loading or no window
+        if (client.getOverlay() != null || client.getWindow() == null) {
+            return;
+        }
+
         if (!gui.isInitialised()) {
-            gui.init(client.getWindow().getHandle());
-            themeApplied = false;
+            try {
+                gui.init(client.getWindow().getHandle());
+                themeApplied = false;
+            } catch (Exception e) {
+                CanvasGLSL.LOG.error("Failed to initialize ImGui - will retry later", e);
+                return;
+            }
         }
         if (!themeApplied) {
             editorState.getTheme().apply();

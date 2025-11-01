@@ -30,6 +30,8 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     private boolean enabled = true;
     private boolean compileQueued;
     private String queuedSource;
+    private boolean compilationFailed = false;
+    private boolean renderLoopStarted = false;
 
     public ShaderBackground() {
         this.controller = CanvasGLSL.IDE;
@@ -71,10 +73,14 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     @Override
     public void onShaderSaved(String source, Path file) {
         needsCompile = true;
+        compilationFailed = false; // Reset failure flag on new shader
         mediaRenderer.unload();
         logDiagnostic("Shader saved to {}; queued for compile (autoCompile={})",
             file != null ? file.getFileName() : "<unsaved>", editorState.isAutoCompileEnabled());
-        if (enabled && editorState.isAutoCompileEnabled()) {
+
+        // Don't compile immediately during initialization - let the render loop handle it
+        // Only queue compile if we're already on the render thread (user manually saving)
+        if (enabled && editorState.isAutoCompileEnabled() && RenderSystem.isOnRenderThread()) {
             queueCompile(source);
         }
     }
@@ -112,6 +118,13 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             length, editorState.isAutoCompileEnabled());
         logDiagnostic("Queued shader source: {}", describeCurrentShader());
 
+        // CRITICAL: Never compile during initialization, even if we're on the render thread
+        // The OpenGL context may not be fully ready yet. Wait for first render pass.
+        if (!renderLoopStarted) {
+            logDiagnostic("Deferring compilation until first render pass (OpenGL context not ready)");
+            return;
+        }
+
         if (RenderSystem.isOnRenderThread()) {
             ShaderRenderer shaderRenderer = getOrCreateRenderer();
             logDiagnostic("Immediate compile flush (on render thread) rendererPresent={}", shaderRenderer != null);
@@ -140,16 +153,15 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             shaderCode = ShaderPresets.TRIPPY.getShaderCode();
         }
 
-        CanvasGLSL.LOG.info("Compiling shader ({} characters)", shaderCode.length());
         boolean success = renderer.compileShader(shaderCode);
 
         if (success) {
             needsCompile = false;
+            compilationFailed = false;
             renderer.resetTime();
-            CanvasGLSL.LOG.info("Shader compiled successfully");
         } else {
             needsCompile = true;
-            CanvasGLSL.LOG.error("Shader compilation failed");
+            compilationFailed = true;
         }
     }
 
@@ -180,6 +192,12 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     public void renderShader(DrawContext context, int width, int height, float alpha, double time, long frame) {
         if (!enabled) return;
 
+        // Mark that we've entered the render loop - OpenGL context is now safe to use
+        if (!renderLoopStarted) {
+            renderLoopStarted = true;
+            logDiagnostic("First render pass detected - OpenGL context ready for compilation");
+        }
+
         logDiagnostic(
             "renderShader frame={} contentType={} needsCompile={} compileQueued={} rendererPresent={} compiled={}",
             frame,
@@ -200,11 +218,14 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             return;
         }
 
-        if (needsCompile && editorState.isAutoCompileEnabled() && !compileQueued) {
+        // Don't retry compilation if it already failed - wait for user to fix and reload
+        if (needsCompile && !compilationFailed && editorState.isAutoCompileEnabled() && !compileQueued) {
             logDiagnostic("Auto-compiling shader during render pass");
             queueCompile(controller.getCurrentSource());
         } else if (needsCompile && !editorState.isAutoCompileEnabled()) {
             logDiagnostic("Shader requires manual compile; skipping render");
+        } else if (compilationFailed) {
+            logDiagnostic("Shader compilation previously failed; waiting for reload");
         }
 
         ShaderRenderer shaderRenderer = getOrCreateRenderer();

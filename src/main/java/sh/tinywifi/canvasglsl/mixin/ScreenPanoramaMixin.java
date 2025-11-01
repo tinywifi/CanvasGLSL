@@ -23,34 +23,58 @@ public abstract class ScreenPanoramaMixin {
 
     @Inject(method = "renderPanoramaBackground", at = @At("HEAD"), cancellable = true)
     private void canvasglsl$drawCustomPanorama(DrawContext context, float delta, CallbackInfo ci) {
-        if (!((Object) this instanceof TitleScreen title)) return;
-
         ShaderBackground module = CanvasGLSL.SHADER_BACKGROUND;
         if (module == null || !module.isEnabled()) return;
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
-        double time = ((TitleScreenShaderAccess) title).canvasglsl$getShaderTime();
-        long frame = ((TitleScreenShaderAccess) title).canvasglsl$getShaderFrame();
+        // Get time and frame from TitleScreen if available, otherwise use fallback
+        double time = 0.0;
+        long frame = 0;
+        if ((Object) this instanceof TitleScreen title) {
+            time = ((TitleScreenShaderAccess) title).canvasglsl$getShaderTime();
+            frame = ((TitleScreenShaderAccess) title).canvasglsl$getShaderFrame();
+        } else {
+            // For non-title screens, use system time from renderer if available
+            var renderer = module.getRenderer();
+            if (renderer != null) {
+                time = (System.nanoTime() - renderer.getStartTimeNanos()) / 1_000_000_000.0;
+                frame = renderer.getFrameCounter();
+            }
+        }
 
         Framebuffer fb = mc.getFramebuffer();
         int fbW = fb.textureWidth;
         int fbH = fb.textureHeight;
 
-        // Render the shader background
-        module.renderShader(context, fbW, fbH, 1.0f, time, frame);
-
-        // Fallback black background if renderer not ready
-        if (!module.isRendererReady()) {
-            context.fill(0, 0, width, height, 0xFF000000);
+        // Enable forced main framebuffer binding for panorama background rendering
+        // This ensures the shader is visible even if Minecraft has bound an intermediate buffer
+        var renderer = module.getRenderer();
+        if (renderer != null && renderer.getCanvas() != null) {
+            renderer.getCanvas().setForceMainFramebuffer(true);
         }
 
-        ci.cancel();
+        // ALWAYS call renderShader() to allow compilation to happen on first frame
+        // The method will handle showing default panorama if shader isn't ready yet
+        module.renderShader(context, fbW, fbH, 1.0f, time, frame);
+
+        // Disable forced framebuffer binding after rendering
+        if (renderer != null && renderer.getCanvas() != null) {
+            renderer.getCanvas().setForceMainFramebuffer(false);
+        }
+
+        // Only cancel default panorama if shader is actually ready to render
+        // Otherwise let the default panorama show through
+        if (module.isRendererReady()) {
+            ci.cancel();
+        }
     }
 
     @Inject(method = "allowRotatingPanorama", at = @At("HEAD"), cancellable = true)
     private void canvasglsl$disablePanorama(CallbackInfoReturnable<Boolean> cir) {
-        if ((Object) this instanceof TitleScreen) {
+        // Disable panorama rotation for all screens when shader background is active
+        ShaderBackground module = CanvasGLSL.SHADER_BACKGROUND;
+        if (module != null && module.isEnabled() && module.isRendererReady()) {
             cir.setReturnValue(false);
         }
     }
