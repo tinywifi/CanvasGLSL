@@ -26,6 +26,10 @@ dependencies {
     modImplementation(include("io.github.spair:imgui-java-natives-windows:$imguiVersion")!!)
     modImplementation(include("io.github.spair:imgui-java-natives-linux:$imguiVersion")!!)
     modImplementation(include("io.github.spair:imgui-java-natives-macos:$imguiVersion")!!)
+
+    // Media decoding (GIF / MP4 support)
+    modImplementation(include("org.jcodec:jcodec:0.2.5")!!)
+    modImplementation(include("org.jcodec:jcodec-javase:0.2.5")!!)
 }
 
 tasks {
