@@ -3,6 +3,7 @@ package sh.tinywifi.canvasglsl.modules;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.util.Window;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
 import sh.tinywifi.canvasglsl.ide.MediaChangeListener;
 import sh.tinywifi.canvasglsl.ide.ShaderChangeListener;
@@ -33,6 +34,13 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     private boolean compilationFailed = false;
     private boolean renderLoopStarted = false;
 
+    private boolean framerateOverrideApplied = false;
+    private boolean previousVsync = false;
+    private int previousMaxFps = 0;
+
+    // Matches the "Unlimited" setting exposed by Minecraft's max framerate slider.
+    private static final int FPS_UNLOCK_VALUE = 260;
+
     public ShaderBackground() {
         this.controller = CanvasGLSL.IDE;
         this.editorState = controller.getEditorState();
@@ -49,6 +57,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     }
 
     public void shutdown() {
+        restoreFramerateOverride();
         destroyRenderer();
         mediaRenderer.unload();
     }
@@ -62,6 +71,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             compileQueued = false;
         } else {
             logDiagnostic("Shader background disabled; destroying renderer");
+            restoreFramerateOverride();
             destroyRenderer();
         }
     }
@@ -192,6 +202,8 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     public void renderShader(DrawContext context, int width, int height, float alpha, double time, long frame) {
         if (!enabled) return;
 
+        applyFramerateOverride();
+
         // Mark that we've entered the render loop - OpenGL context is now safe to use
         if (!renderLoopStarted) {
             renderLoopStarted = true;
@@ -281,6 +293,65 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
                 ShaderPresets preset = editorState.getActivePreset();
                 return preset != null ? "Preset:" + preset.name() : "<unsaved>";
             });
+    }
+
+    private void applyFramerateOverride() {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            return;
+        }
+
+        if (!framerateOverrideApplied) {
+            var options = mc.options;
+            if (options == null) {
+                return;
+            }
+
+            previousMaxFps = options.getMaxFps().getValue();
+            previousVsync = options.getEnableVsync().getValue();
+
+            framerateOverrideApplied = true;
+
+            options.getEnableVsync().setValue(false);
+            options.getMaxFps().setValue(FPS_UNLOCK_VALUE);
+        }
+
+        ensureWindowFramerate(mc);
+    }
+
+    private void ensureWindowFramerate(MinecraftClient mc) {
+        Window window = mc.getWindow();
+        if (window == null) {
+            return;
+        }
+        window.setVsync(false);
+        window.setFramerateLimit(FPS_UNLOCK_VALUE);
+    }
+
+    private void restoreFramerateOverride() {
+        if (!framerateOverrideApplied) {
+            return;
+        }
+
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) {
+            framerateOverrideApplied = false;
+            return;
+        }
+
+        var options = mc.options;
+        if (options != null) {
+            options.getEnableVsync().setValue(previousVsync);
+            options.getMaxFps().setValue(previousMaxFps);
+        }
+
+        Window window = mc.getWindow();
+        if (window != null) {
+            window.setVsync(previousVsync);
+            window.setFramerateLimit(previousMaxFps);
+        }
+
+        framerateOverrideApplied = false;
     }
 }
 
