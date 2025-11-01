@@ -7,6 +7,7 @@
   "authors": [
     "tinywifi"
   ],
+  "icon": "assets/canvasglsl/logo.png",
   "environment": "client",
   "entrypoints": {
     "client": [
