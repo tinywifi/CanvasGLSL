@@ -23,17 +23,15 @@ import sh.tinywifi.canvasglsl.shader.ShaderPresets;
 
 import java.awt.Desktop;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.swing.JFileChooser;
-import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
  * Shared Dear ImGui viewport used by the standalone screen and the overlay toggle.
@@ -59,18 +57,23 @@ public final class ShaderIDEViewport {
     private final ImBoolean disableVsyncToggle = new ImBoolean(true);
     private final int[] framerateLimitBuffer = new int[]{120};
     private final float[] fontScale = new float[]{1.0f};
+    private final ImString mediaPathInput = new ImString("", 512);
 
     private boolean openNewFilePopup;
     private boolean openSaveAsPopup;
     private boolean openDeletePopup;
     private Path pendingDeleteFile;
     private boolean themeApplied;
-    private volatile boolean mediaChooserOpen;
+    private boolean showMediaPickerPopup;
+    private Path mediaBrowserDirectory;
+    private Path lastMediaDirectory;
 
     public ShaderIDEViewport(ShaderIDEController controller) {
         this.controller = controller;
         this.workspace = controller.getWorkspace();
         this.editorState = controller.getEditorState();
+        this.mediaBrowserDirectory = resolveDefaultMediaDirectory();
+        this.lastMediaDirectory = mediaBrowserDirectory;
     }
 
     public void ensureReady() {
@@ -129,6 +132,7 @@ public final class ShaderIDEViewport {
         ImGui.end();
 
         handlePopups();
+        renderMediaPickerPopup();
     }
 
     private void buildMenuBar() {
@@ -543,42 +547,14 @@ public final class ShaderIDEViewport {
     }
 
     private void openMediaChooser() {
-        if (mediaChooserOpen) return;
-        mediaChooserOpen = true;
-
-        CompletableFuture.runAsync(() -> {
-            final Path[] selected = new Path[1];
-            final int[] result = new int[]{JFileChooser.CANCEL_OPTION};
-
-            try {
-                SwingUtilities.invokeAndWait(() -> {
-                    JFileChooser chooser = new JFileChooser();
-                    chooser.setDialogTitle("Select media file");
-                    chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-                    chooser.setMultiSelectionEnabled(false);
-                    chooser.setFileFilter(new FileNameExtensionFilter(
-                        "Images / GIF / Video", "png", "jpg", "jpeg", "bmp", "gif", "mp4", "mov", "webm", "mkv"
-                    ));
-
-                    result[0] = chooser.showOpenDialog(null);
-                    if (result[0] == JFileChooser.APPROVE_OPTION) {
-                        selected[0] = chooser.getSelectedFile().toPath();
-                    }
-                });
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            } catch (InvocationTargetException ex) {
-                CanvasGLSL.LOG.error("Failed to open media chooser", ex.getCause());
-                MinecraftClient.getInstance().execute(() ->
-                    editorState.setStatus("Failed to open media picker"));
-            } finally {
-                mediaChooserOpen = false;
-            }
-
-            if (result[0] == JFileChooser.APPROVE_OPTION && selected[0] != null) {
-                MinecraftClient.getInstance().execute(() -> handleMediaSelection(selected[0]));
-            }
-        });
+        if (showMediaPickerPopup) return;
+        if (lastMediaDirectory != null && Files.isDirectory(lastMediaDirectory)) {
+            mediaBrowserDirectory = lastMediaDirectory;
+        } else {
+            mediaBrowserDirectory = resolveDefaultMediaDirectory();
+        }
+        mediaPathInput.set("");
+        showMediaPickerPopup = true;
     }
 
     private void handleMediaSelection(Path source) {
@@ -587,6 +563,8 @@ public final class ShaderIDEViewport {
             editorState.setStatus("File not found: " + source);
             return;
         }
+
+        lastMediaDirectory = source.getParent();
 
         MediaType type = controller.classifyMedia(source);
         if (type == MediaType.UNSUPPORTED) {
@@ -606,6 +584,139 @@ public final class ShaderIDEViewport {
             editorState.setStatus("Failed to save media descriptor");
             CanvasGLSL.LOG.error("Failed to save media descriptor for {}", source, ex);
         }
+    }
+
+    private void renderMediaPickerPopup() {
+        if (showMediaPickerPopup) {
+            ImGui.openPopup("Select Media Source");
+            showMediaPickerPopup = false;
+        }
+
+        if (ImGui.beginPopupModal("Select Media Source", ImGuiWindowFlags.AlwaysAutoResize)) {
+            ImGui.textWrapped("Choose an image, GIF, or video to use for the menu background.");
+            ImGui.spacing();
+
+            ImGui.textWrapped("Directory:");
+            ImGui.textColored(ImColor.rgba(170, 170, 170, 255), mediaBrowserDirectory.toAbsolutePath().toString());
+
+            if (ImGui.button("Up one level")) {
+                Path parent = mediaBrowserDirectory.getParent();
+                if (parent != null && Files.isDirectory(parent)) {
+                    mediaBrowserDirectory = parent;
+                }
+            }
+            ImGui.sameLine();
+            if (ImGui.button("Workspace")) {
+                Path mediaDir = workspace.resolve("media");
+                if (!Files.isDirectory(mediaDir)) {
+                    mediaDir = workspace.getRoot();
+                }
+                mediaBrowserDirectory = mediaDir;
+            }
+            ImGui.sameLine();
+            if (ImGui.button("Home")) {
+                mediaBrowserDirectory = Paths.get(System.getProperty("user.home", "."));
+            }
+
+            ImGui.inputText("Selected file", mediaPathInput);
+
+            ImGui.separator();
+
+            ImGui.beginChild("MediaBrowser", 520, 260, true);
+            List<Path> entries = listDirectoryEntries(mediaBrowserDirectory);
+            if (entries.isEmpty()) {
+                ImGui.textDisabled("(Directory is empty)");
+            } else {
+                for (Path entry : entries) {
+                    boolean isDirectory = Files.isDirectory(entry);
+                    MediaType mediaType = isDirectory ? MediaType.UNSUPPORTED : controller.classifyMedia(entry);
+                    boolean supported = mediaType != MediaType.UNSUPPORTED;
+                    String label = (isDirectory ? "[Dir] " : "") + entry.getFileName().toString();
+
+                    if (!isDirectory && !supported) {
+                        ImGui.beginDisabled();
+                    }
+
+                    if (ImGui.selectable(label, false)) {
+                        if (isDirectory) {
+                            mediaBrowserDirectory = entry;
+                        } else {
+                            mediaPathInput.set(entry.toAbsolutePath().toString());
+                        }
+                    }
+
+                    if (!isDirectory && !supported) {
+                        ImGui.endDisabled();
+                    }
+                }
+            }
+            ImGui.endChild();
+
+            boolean hasSelection = mediaPathInput.get().length() > 0;
+            Path selectedPath = null;
+            boolean selectionValid = false;
+            if (hasSelection) {
+                try {
+                    selectedPath = Paths.get(mediaPathInput.get());
+                    selectionValid = Files.exists(selectedPath) && controller.classifyMedia(selectedPath) != MediaType.UNSUPPORTED;
+                } catch (java.nio.file.InvalidPathException | SecurityException ignored) {
+                    selectionValid = false;
+                }
+            }
+
+            if (!selectionValid) {
+                ImGui.beginDisabled();
+            }
+            if (ImGui.button("Load media")) {
+                if (selectedPath != null) {
+                    handleMediaSelection(selectedPath);
+                }
+                ImGui.closeCurrentPopup();
+            }
+            if (!selectionValid) {
+                ImGui.endDisabled();
+            }
+
+            ImGui.sameLine();
+            if (ImGui.button("Cancel")) {
+                ImGui.closeCurrentPopup();
+            }
+
+            ImGui.endPopup();
+        }
+    }
+
+    private List<Path> listDirectoryEntries(Path directory) {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return List.of();
+        }
+        try (Stream<Path> stream = Files.list(directory)) {
+            return stream
+                .sorted(Comparator
+                    .comparing((Path path) -> !Files.isDirectory(path))
+                    .thenComparing(path -> path.getFileName().toString().toLowerCase()))
+                .limit(500)
+                .collect(Collectors.toCollection(ArrayList::new));
+        } catch (IOException ex) {
+            CanvasGLSL.LOG.error("Failed to list media directory {}", directory, ex);
+            editorState.setStatus("Failed to list directory " + directory.getFileName());
+            return List.of();
+        }
+    }
+
+    private Path resolveDefaultMediaDirectory() {
+        if (workspace == null) {
+            return Paths.get(System.getProperty("user.home", "."));
+        }
+        Path mediaDir = workspace.resolve("media");
+        if (Files.isDirectory(mediaDir)) {
+            return mediaDir;
+        }
+        Path root = workspace.getRoot();
+        if (Files.isDirectory(root)) {
+            return root;
+        }
+        return Paths.get(System.getProperty("user.home", "."));
     }
 
     private Path allocateMediaDescriptor(Path source) {

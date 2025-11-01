@@ -24,6 +24,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     private final ShaderEditorState editorState;
     private ShaderRenderer renderer;
     private final MediaRenderer mediaRenderer;
+    private MediaEntry pendingMediaEntry;
 
     private long lastFpsDiagnosticMs = 0L;
 
@@ -50,7 +51,6 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
     public void initialize() {
         controller.addListener(this);
         controller.addMediaListener(this);
-        controller.getCurrentMediaEntry().ifPresent(mediaRenderer::load);
         compileQueued = false;
         needsCompile = true;
         logDiagnostic("Shader background initialized (enabled={})", enabled);
@@ -97,7 +97,8 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
 
     @Override
     public void onMediaSelected(MediaEntry entry) {
-        mediaRenderer.load(entry);
+        pendingMediaEntry = entry;
+        mediaRenderer.unload();
         logDiagnostic("Media selected {}", entry != null ? entry.sourcePath() : "<null>");
     }
 
@@ -221,6 +222,19 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         );
 
         if (controller.getActiveContentType() == ShaderIDEController.ContentType.MEDIA) {
+            if (pendingMediaEntry != null && RenderSystem.isOnRenderThread()) {
+                try {
+                    mediaRenderer.load(pendingMediaEntry);
+                    logDiagnostic("Loaded media entry {}", pendingMediaEntry.sourcePath());
+                } catch (Exception ex) {
+                    CanvasGLSL.LOG.error("Failed to load media {}", pendingMediaEntry.sourcePath(), ex);
+                    editorState.setStatus("Failed to load media: " + pendingMediaEntry.sourcePath().getFileName());
+                    mediaRenderer.unload();
+                } finally {
+                    pendingMediaEntry = null;
+                }
+            }
+
             if (mediaRenderer.isReady()) {
                 logDiagnostic("Rendering media background ({}x{})", width, height);
                 mediaRenderer.render(context, width, height, alpha);
