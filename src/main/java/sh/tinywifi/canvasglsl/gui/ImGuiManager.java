@@ -8,6 +8,12 @@ import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.Window;
+import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.gl.GlBackend;
+import net.minecraft.client.texture.GlTexture;
+import com.mojang.blaze3d.opengl.GlStateManager;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.textures.GpuTexture;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.opengl.GL11C;
@@ -35,6 +41,8 @@ public final class ImGuiManager {
 
     private boolean initialised;
     private boolean frameActive;
+    private int previousFramebufferBinding = -1;
+    private boolean framebufferOverrideApplied;
 
     private ImGuiManager() {}
 
@@ -87,8 +95,28 @@ public final class ImGuiManager {
 
         if (frameActive) return false;
 
+        framebufferOverrideApplied = false;
+        previousFramebufferBinding = -1;
+
         MinecraftClient mc = MinecraftClient.getInstance();
         Window window = mc.getWindow();
+
+        Framebuffer framebuffer = mc.getFramebuffer();
+        if (framebuffer != null) {
+            int currentBinding = GL11C.glGetInteger(GL30C.GL_FRAMEBUFFER_BINDING);
+            previousFramebufferBinding = currentBinding;
+            GpuTexture colorAttachment = framebuffer.getColorAttachment();
+            if (colorAttachment instanceof GlTexture glTexture) {
+                var device = RenderSystem.getDevice();
+                if (device instanceof GlBackend backend) {
+                    GlStateManager._glBindFramebuffer(
+                        GL30C.GL_FRAMEBUFFER,
+                        glTexture.getOrCreateFramebuffer(backend.getBufferManager(), framebuffer.getDepthAttachment())
+                    );
+                    framebufferOverrideApplied = true;
+                }
+            }
+        }
 
         int framebufferWidth = window.getFramebufferWidth();
         int framebufferHeight = window.getFramebufferHeight();
@@ -217,7 +245,7 @@ public final class ImGuiManager {
                 GL11C.glDisable(GL11C.GL_BLEND);
             }
             GL14C.glBlendFuncSeparate(lastBlendSrcRgb, lastBlendDstRgb, lastBlendSrcAlpha, lastBlendDstAlpha);
-            GL14C.glBlendEquationSeparate(lastBlendEquationRgb, lastBlendEquationAlpha);
+            GL20C.glBlendEquationSeparate(lastBlendEquationRgb, lastBlendEquationAlpha);
 
             if (lastEnableCullFace) {
                 GL11C.glEnable(GL11C.GL_CULL_FACE);
@@ -278,6 +306,11 @@ public final class ImGuiManager {
         GL15C.glBindBuffer(GL15C.GL_ELEMENT_ARRAY_BUFFER, prevElementArrayBuffer);
         GL30C.glBindVertexArray(prevVAO);
         GL20C.glUseProgram(prevProgram);
+
+        if (framebufferOverrideApplied) {
+            GlStateManager._glBindFramebuffer(GL30C.GL_FRAMEBUFFER, previousFramebufferBinding);
+            framebufferOverrideApplied = false;
+        }
 
         frameActive = false;
     }

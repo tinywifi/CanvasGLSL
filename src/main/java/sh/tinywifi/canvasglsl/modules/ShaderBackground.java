@@ -316,16 +316,10 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             options.getMaxFps().setValue(FPS_UNLOCK_VALUE);
         }
 
-        ensureWindowFramerate(mc);
-    }
-
-    private void ensureWindowFramerate(MinecraftClient mc) {
         Window window = mc.getWindow();
-        if (window == null) {
-            return;
+        if (window != null) {
+            window.setVsync(false);
         }
-        window.setVsync(false);
-        window.setFramerateLimit(FPS_UNLOCK_VALUE);
     }
 
     private void restoreFramerateOverride() {
@@ -348,7 +342,6 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         Window window = mc.getWindow();
         if (window != null) {
             window.setVsync(previousVsync);
-            window.setFramerateLimit(previousMaxFps);
         }
 
         framerateOverrideApplied = false;
