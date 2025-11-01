@@ -1,100 +1,74 @@
 # CanvasGLSL
 
-A Fabric client mod for Minecraft 1.21 through 1.21.10 that replaces the main menu panorama with custom GLSL shaders - now backed by an in-game Dear ImGui IDE.
+Replace Minecraft's menu backgrounds with custom GLSL shaders. Includes a built-in shader editor with syntax highlighting.
 
 ## Features
 
-- **Dear ImGui shader IDE** with dedicated IDE & Settings tabs
-- **Workspace-aware file manager** rooted at `.minecraft/canvasglsl`
-- **Syntax highlighting + autocomplete** for GLSL, including line numbers and selection rendering
-- **Theme picker & font scaling** to match your preferred editor look
-- **Manual and auto compile paths** – “Compile now”, “Save + Compile”, and optional compile-on-save
-- **Bundled presets** (Trippy & Grass Field) that can be loaded directly into the editor
-- **Uniform support** for `time`, `resolution`, `mouse`, `frame`, `persistent_frame`, `speed`, and Shadertoy-style `iTime`, `iMouse`, `iResolution`, `iFrame`, `iChannel*`
-- **Automatic legacy patching** to keep `gl_FragColor` and non-Shadertoy shaders working without edits
-
+- **Live shader editor** (press `Insert` to open)
+- **Works on all menu screens** (title, singleplayer, multiplayer, options, etc.)
+- **Shadertoy compatible** - paste shaders directly from Shadertoy
+- **Auto-compile** or manual compile modes
+- **File manager** for organizing shaders
+- **Syntax highlighting**
 ## Installation
 
-1. Install the [Fabric loader](https://fabricmc.net/) for your target Minecraft version (any build from 1.21 to 1.21.10).
-2. Download the latest CanvasGLSL release.
-3. Drop the `.jar` into your `.minecraft/mods` folder.
-4. Launch Minecraft — the panorama replacement is enabled by default.
+1. Install [Fabric loader](https://fabricmc.net/) for Minecraft 1.21.10
+2. Download the latest release JAR
+3. Put it in your `.minecraft/mods` folder
+4. Launch the game
 
 ## Usage
 
-1. Press `Insert` at any time to toggle the ImGui IDE overlay (press `Insert` again or `Esc` to hide it).
-2. The shader IDE presents:
-   - **Left pane** - file explorer for `.minecraft/canvasglsl/`
-   - **Right pane** - GLSL editor with syntax highlighting, autocomplete, and line numbers
-3. Switch to the **Settings** tab to:
-   - Pick editor themes and adjust zoom
-   - Toggle the shader panorama on/off
-   - Toggle auto-save / auto-compile
-   - Load built-in presets
-   - Trigger **Compile now** or **Save + Compile**
-4. Save (`Ctrl+S`) or hit **Save + Compile** to rebuild and preview the shader on the main menu background.
+### Opening the Editor
 
-### Shader Workspace
+Press `Insert` while in any menu to open the shader IDE. Press `Insert` or `Esc` to close it.
 
-- Files live under `.minecraft/canvasglsl/`; subdirectories are supported.
-- Creating a new shader seeds it with the Trippy preset for quick experimentation.
-- Selecting an existing file loads it immediately and recompiles if auto-compile is enabled.
-- When auto-compile is disabled, use **Compile now** to rebuild without saving.
+### Writing Shaders
 
-### Writing Custom Shaders
+Shaders are saved in `.minecraft/canvasglsl/`. You can create folders to organize them.
 
-Available uniforms:
+**Supported uniforms:**
+- `uniform float iTime;` - Time in seconds
+- `uniform vec3 iResolution;` - Screen resolution (width, height, aspect)
+- `uniform vec4 iMouse;` - Mouse position (x, y, click x, click y)
+- `uniform int iFrame;` - Frame counter
+- `uniform sampler2D iChannel0;` - Procedural noise textures (iChannel0 through iChannel3)
+- `uniform float iTimeDelta;` - Time since last frame
+- `uniform vec4 iDate;` - Current date/time (year, month, day, seconds)
+- `uniform float iSampleRate;` - Audio sample rate (44100)
 
-- `uniform float time;` – Seconds since the shader started.
-- `uniform vec2 resolution;` – Current screen resolution (pixels).
-- `uniform vec2 mouse;` - Normalised mouse position (0.0 - 1.0).
-- `uniform int frame;` - Frame counter (resets on compile).
-- `uniform int persistent_frame;` - Global frame counter (never resets).
-- `uniform float speed;` - Panorama speed slider from Minecraft options.
-- Shadertoy-compatible aliases: `iTime`, `iResolution`, `iMouse`, `iFrame`, `iChannel0`..`iChannel3`, `iChannelTime[]`, `iChannelResolution[]`
-
-Output to `fragColor` or `fragmentColor` (vec4). Example:
-
+**Example shader:**
 ```glsl
-#version 330 core
-out vec4 fragColor;
-
-uniform vec2 resolution;
-uniform float time;
-
-void main() {
-    vec2 uv = gl_FragCoord.xy / resolution.xy;
-    vec3 col = 0.5 + 0.5 * cos(time + uv.xyx + vec3(0, 2, 4));
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 uv = fragCoord / iResolution.xy;
+    vec3 col = 0.5 + 0.5 * cos(iTime + uv.xyx + vec3(0, 2, 4));
     fragColor = vec4(col, 1.0);
 }
 ```
 
-## Performance Tips
+### Using Shadertoy Shaders
 
-- Prefer lighter shaders (fewer loops, cheaper math) for older hardware.
-- Reduce iteration counts in raymarchers and noise-heavy effects.
-- Start from the **Trippy** preset if you need a lightweight baseline.
-- Avoid excessive texture lookups unless necessary.
+1. Copy shader code from [Shadertoy](https://www.shadertoy.com/)
+2. Paste into the editor
+3. Click "Compile" or enable auto-compile
+4. Done! The shader will render as your menu background
 
-### Editor Tips
+## Controls
 
-- Enable auto-save + auto-compile for rapid iteration; disable when you prefer manual control.
-- Use folders inside `.minecraft/canvasglsl` to organise experiments.
-- Switch themes whenever you need a new vibe – colour palettes also update syntax highlighting.
+- `Insert` - Toggle shader editor
+- `Esc` - Close editor
+- `Ctrl+S` - Save current shader
+- **Compile** button - Compile shader manually
+- **Auto-compile** toggle - Auto-compile on save
 
-## Building from Source
+## Building
 
 ```bash
 ./gradlew build
 ```
 
-The jar will end up in `build/libs/`.
-
-## Credits
-
-- Shader examples based on Trippy (Hazsi, modified) & a Shadertoy-inspired Grass Field.
-- Built with [Fabric](https://fabricmc.net/) and [imgui-java](https://github.com/SpaiR/imgui-java).
+Output: `build/libs/canvasglsl-*.jar`
 
 ## License
 
-This project remains under CC0. Do whatever you like with it.
+CC0 - Public Domain
