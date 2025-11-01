@@ -45,6 +45,20 @@ public abstract class MinecraftClientMixin {
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void CanvasGLSL$tick(CallbackInfo ci) {
+        MinecraftClient mc = (MinecraftClient) (Object) this;
+
+        // Don't allow toggling overlay until the game is fully initialized
+        // This prevents issues when opening GUI too early during startup
+        if (mc.getOverlay() != null) {
+            return; // Still loading
+        }
+
+        // Additional safety: ensure we have a valid screen or world before allowing GUI toggle
+        // This prevents OpenGL state conflicts during resource loading
+        if (mc.currentScreen == null && mc.world == null) {
+            return; // Not ready yet
+        }
+
         boolean insertPressed = canvasglsl$isKeyPressed(window, GLFW.GLFW_KEY_INSERT);
         if (insertPressed && !CanvasGLSL$insertDown) {
             CanvasGLSL.IDE.toggleOverlayVisible();

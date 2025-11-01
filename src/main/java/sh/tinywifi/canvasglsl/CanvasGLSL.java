@@ -17,7 +17,10 @@ public class CanvasGLSL implements ClientModInitializer {
     public void onInitializeClient() {
         LOG.info("Initializing CanvasGLSL (standalone)");
 
-        IDE.loadPersistedState();
         SHADER_BACKGROUND.initialize();
+        IDE.loadPersistedState();
+
+        // Note: Don't compile shader here - it will be auto-compiled on first render
+        // when the OpenGL context is fully initialized
     }
 }
