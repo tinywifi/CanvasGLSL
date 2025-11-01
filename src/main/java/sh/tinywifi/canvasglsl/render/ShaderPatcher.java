@@ -29,6 +29,9 @@ public class ShaderPatcher {
             CanvasGLSL.LOG.warn("Loaded shader uses outdated OpenGL keyword 'gl_FragColor'!");
         }
 
+        // Note: Ensure your fragment shader outputs opaque alpha (e.g., vec4(color.rgb, 1.0))
+        // to prevent UI flickering issues. Semi-transparent backgrounds can cause rendering artifacts.
+
         if (!containsUniform(working, "iTime")) {
             header.append("uniform float iTime;\n");
         }

@@ -1,12 +1,8 @@
 package sh.tinywifi.canvasglsl.gui;
 
-import java.lang.ReflectiveOperationException;
-import java.lang.reflect.Method;
-
 import imgui.ImFontAtlas;
 import imgui.ImGui;
 import imgui.ImGuiIO;
-import imgui.ImGuiStyle;
 import imgui.flag.ImGuiConfigFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
@@ -22,8 +18,6 @@ import org.lwjgl.opengl.GL30C;
  */
 public final class ImGuiManager {
     private static final ImGuiManager INSTANCE = new ImGuiManager();
-
-    private static final Method SCALE_FACTOR_METHOD = resolveScaleFactorMethod();
 
     private final ImGuiImplGlfw glfw = new ImGuiImplGlfw();
     private final ImGuiImplGl3 gl3 = new ImGuiImplGl3();
@@ -52,7 +46,7 @@ public final class ImGuiManager {
         fonts.addFontDefault();
 
         glfw.init(windowHandle, true);
-        gl3.init("#version 150");
+        gl3.init();  // Let imgui-java auto-detect the GL version
 
         initialised = true;
     }
@@ -71,17 +65,8 @@ public final class ImGuiManager {
         int framebufferHeight = window.getFramebufferHeight();
         GL11C.glViewport(0, 0, framebufferWidth, framebufferHeight);
 
-        ImGuiIO io = ImGui.getIO();
-        io.setDisplaySize((float) window.getScaledWidth(), (float) window.getScaledHeight());
-        float scale = (float) computeScaleFactor(window);
-        io.setDisplayFramebufferScale(scale, scale);
-
-        // Defensively ensure global alpha is always 1.0 to prevent transparency issues
-        ImGuiStyle style = ImGui.getStyle();
-        if (style.getAlpha() < 0.99f) {
-            style.setAlpha(1.0f);
-        }
-
+        // Let GLFW backend handle DisplaySize and DisplayFramebufferScale
+        // Don't overwrite them here or clip-space calculations will be wrong
         glfw.newFrame();
         gl3.newFrame();
         ImGui.newFrame();
@@ -127,45 +112,6 @@ public final class ImGuiManager {
 
     public boolean isInitialised() {
         return initialised;
-    }
-
-    private static double computeScaleFactor(Window window) {
-        if (SCALE_FACTOR_METHOD != null) {
-            try {
-                Object value = SCALE_FACTOR_METHOD.invoke(window);
-                if (value instanceof Number number) {
-                    return number.doubleValue();
-                }
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-
-        int scaledWidth = window.getScaledWidth();
-        int scaledHeight = window.getScaledHeight();
-        int framebufferWidth = window.getFramebufferWidth();
-        int framebufferHeight = window.getFramebufferHeight();
-
-        double scaleX = scaledWidth != 0 ? (double) framebufferWidth / scaledWidth : 1.0;
-        double scaleY = scaledHeight != 0 ? (double) framebufferHeight / scaledHeight : 1.0;
-
-        double scale = scaleX;
-        if (!Double.isFinite(scale) || scale <= 0.0) {
-            scale = scaleY;
-        }
-        if (!Double.isFinite(scale) || scale <= 0.0) {
-            scale = 1.0;
-        }
-        return scale;
-    }
-
-    private static Method resolveScaleFactorMethod() {
-        try {
-            Method method = Window.class.getMethod("getScaleFactor");
-            method.setAccessible(true);
-            return method;
-        } catch (ReflectiveOperationException ignored) {
-            return null;
-        }
     }
 }
 

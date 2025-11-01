@@ -10,18 +10,34 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL20;
-import org.lwjgl.opengl.GL30;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
 import sh.tinywifi.canvasglsl.render.GlobalState;
+import sh.tinywifi.canvasglsl.render.ShaderCanvas;
 import sh.tinywifi.canvasglsl.render.ShaderPatcher;
+import sh.tinywifi.canvasglsl.render.FullscreenQuad;
 
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.util.Random;
 
 public class ShaderRenderer {
+    private static final int GL_BLEND_SRC_RGB = 0x80C9;
+    private static final int GL_BLEND_DST_RGB = 0x80C8;
+    private static final int GL_BLEND_SRC_ALPHA = 0x80CB;
+    private static final int GL_BLEND_DST_ALPHA = 0x80CA;
+    private static final int GL_BLEND_EQUATION_RGB = 0x8009;
+    private static final int GL_BLEND_EQUATION_ALPHA = 0x883D;
+
+    private static boolean RENDERSYSTEM_DEPTH_AVAILABLE = true;
+    private static boolean RENDERSYSTEM_BLEND_AVAILABLE = true;
+    private static boolean RENDERSYSTEM_CULL_AVAILABLE = true;
+    private static boolean RENDERSYSTEM_DEPTH_MASK_AVAILABLE = true;
+    private static boolean RENDERSYSTEM_DEFAULT_BLEND_AVAILABLE = true;
+    private static boolean RENDERSYSTEM_BLEND_SEPARATE_AVAILABLE = true;
+
     private int shaderProgram = -1;
     private int vertexShader = -1;
     private int fragmentShader = -1;
@@ -44,9 +60,8 @@ public class ShaderRenderer {
     private final int[] channelTextures = new int[4];
     private final int[] channelWidths = new int[4];
     private final int[] channelHeights = new int[4];
-
-    private int vao = -1;
-    private int vbo = -1;
+    private FullscreenQuad quad;
+    private ShaderCanvas canvas;
     private boolean glResourcesInitialized;
 
     private final MinecraftClient mc;
@@ -77,42 +92,20 @@ public class ShaderRenderer {
             return;
         }
         RenderSystem.assertOnRenderThread();
-        initializeQuad();
+        initializeQuadBuffer();
         initializeChannelTextures();
+        if (canvas == null) {
+            canvas = new ShaderCanvas();
+        }
         glResourcesInitialized = true;
     }
 
-    private void initializeQuad() {
-        // Create VAO
-        vao = GL30.glGenVertexArrays();
-        GL30.glBindVertexArray(vao);
-
-        // Create VBO
-        vbo = GL20.glGenBuffers();
-        GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, vbo);
-
-        // Fullscreen quad vertices (covering NDC space -1 to 1)
-        float[] vertices = {
-            -1.0f, -1.0f, 0.0f,  // Bottom-left
-             1.0f, -1.0f, 0.0f,  // Bottom-right
-             1.0f,  1.0f, 0.0f,  // Top-right
-            -1.0f,  1.0f, 0.0f   // Top-left
-        };
-
-        FloatBuffer vertexBuffer = BufferUtils.createFloatBuffer(vertices.length);
-        vertexBuffer.put(vertices).flip();
-
-        GL20.glBufferData(GL20.GL_ARRAY_BUFFER, vertexBuffer, GL20.GL_STATIC_DRAW);
-
-        // Set vertex attribute pointer
-        GL20.glVertexAttribPointer(0, 3, GL20.GL_FLOAT, false, 3 * Float.BYTES, 0);
-        GL20.glEnableVertexAttribArray(0);
-
-        // Unbind
-        GL20.glBindBuffer(GL20.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
-
-        CanvasGLSL.LOG.info("Initialized shader quad with VAO={} VBO={}", vao, vbo);
+    private void initializeQuadBuffer() {
+        if (quad != null) {
+            return;
+        }
+        quad = FullscreenQuad.create();
+        CanvasGLSL.LOG.info("Initialized shader quad buffer");
     }
 
     private void initializeChannelTextures() {
@@ -305,22 +298,60 @@ public class ShaderRenderer {
             CanvasGLSL.LOG.error("Render called but shader program is not compiled!");
             return;
         }
-
-        if (vao == -1) {
-            CanvasGLSL.LOG.error("Render called but VAO is not initialized!");
+        if (canvas == null) {
+            CanvasGLSL.LOG.error("Render called but shader canvas is not available!");
+            return;
+        }
+        if (quad == null) {
+            CanvasGLSL.LOG.error("Render called but quad buffer is not initialized!");
             return;
         }
 
-        // Log detailed info only once per second
-        if (frameCounter % 60 == 0) {
-            CanvasGLSL.LOG.info("=== RENDER DEBUG (Frame {}) ===", frameCounter);
-            CanvasGLSL.LOG.info("Viewport: {}x{}, Alpha: {}", width, height, alpha);
-            CanvasGLSL.LOG.info("Shader Program ID: {}", shaderProgram);
-            CanvasGLSL.LOG.info("VAO: {}, VBO: {}", vao, vbo);
+        quality = Math.max(0.05, quality);
+
+        Window window = mc.getWindow();
+        int framebufferWidth = width;
+        int framebufferHeight = height;
+        if (window != null) {
+            framebufferWidth = Math.max(1, window.getFramebufferWidth());
+            framebufferHeight = Math.max(1, window.getFramebufferHeight());
+        } else {
+            framebufferWidth = Math.max(1, framebufferWidth);
+            framebufferHeight = Math.max(1, framebufferHeight);
         }
 
+        int targetWidth = Math.max(1, (int) Math.round(framebufferWidth * quality));
+        int targetHeight = Math.max(1, (int) Math.round(framebufferHeight * quality));
+
+        if (frameCounter % 60 == 0) {
+            CanvasGLSL.LOG.info("=== RENDER DEBUG (Frame {}) ===", frameCounter);
+            CanvasGLSL.LOG.info("Viewport: {}x{}, Alpha: {}", targetWidth, targetHeight, alpha);
+            CanvasGLSL.LOG.info("Shader Program ID: {}", shaderProgram);
+        }
+
+        IntBuffer viewportBuffer = BufferUtils.createIntBuffer(4);
+        GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewportBuffer);
+        int prevViewportX = viewportBuffer.get(0);
+        int prevViewportY = viewportBuffer.get(1);
+        int prevViewportWidth = viewportBuffer.get(2);
+        int prevViewportHeight = viewportBuffer.get(3);
+
+        boolean depthTestEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
+        boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        boolean depthMaskEnabled = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
+        int prevBlendSrcRgb = GL11.glGetInteger(GL_BLEND_SRC_RGB);
+        int prevBlendDstRgb = GL11.glGetInteger(GL_BLEND_DST_RGB);
+        int prevBlendSrcAlpha = GL11.glGetInteger(GL_BLEND_SRC_ALPHA);
+        int prevBlendDstAlpha = GL11.glGetInteger(GL_BLEND_DST_ALPHA);
+        int prevBlendEqRgb = GL11.glGetInteger(GL_BLEND_EQUATION_RGB);
+        int prevBlendEqAlpha = GL11.glGetInteger(GL_BLEND_EQUATION_ALPHA);
+
+        canvas.resize(targetWidth, targetHeight);
+        canvas.write();
+        GL11.glViewport(0, 0, targetWidth, targetHeight);
+
         try {
-            // Check for OpenGL errors before rendering
             int error = GL11.glGetError();
             if (error != GL11.GL_NO_ERROR) {
                 CanvasGLSL.LOG.warn("OpenGL error before render: {}", error);
@@ -328,13 +359,13 @@ public class ShaderRenderer {
 
             // Disable depth test and enable blending
             GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDepthMask(false);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDisable(GL11.GL_CULL_FACE);
 
-            // Use program
             GL20.glUseProgram(shaderProgram);
 
-            // Set uniforms
             long nowNanos = System.nanoTime();
             float currentTime = (nowNanos - startTimeNanos) / 1_000_000_000f;
             if (frameCounter % 60 == 0) {
@@ -348,25 +379,23 @@ public class ShaderRenderer {
             }
 
             if (resolutionUniform != -1) {
-                GL20.glUniform2f(resolutionUniform, (float) width, (float) height);
+                GL20.glUniform2f(resolutionUniform, (float) targetWidth, (float) targetHeight);
             }
             if (iResolutionUniform != -1) {
-                GL20.glUniform3f(iResolutionUniform, (float) width, (float) height, 1.0f);
+                GL20.glUniform3f(iResolutionUniform, (float) targetWidth, (float) targetHeight, 1.0f);
             }
 
-            Window window = mc.getWindow();
-
-            if (mc.mouse != null && window != null) {
-                float normalizedX = (float) mc.mouse.getX() / Math.max(width, 1);
-                float normalizedY = (float) mc.mouse.getY() / Math.max(height, 1);
+            if (mc.mouse != null) {
+                float normalizedX = (float) mc.mouse.getX() / Math.max(framebufferWidth, 1);
+                float normalizedY = (float) mc.mouse.getY() / Math.max(framebufferHeight, 1);
 
                 if (mouseUniform != -1) {
                     GL20.glUniform2f(mouseUniform, normalizedX, normalizedY);
                 }
 
-                float pixelX = (float) mc.mouse.getX();
-                float pixelY = (float) (height - mc.mouse.getY());
-                boolean leftDown = GLFW.glfwGetMouseButton(window.getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+                float pixelX = normalizedX * targetWidth;
+                float pixelY = (1.0f - normalizedY) * targetHeight;
+                boolean leftDown = window != null && GLFW.glfwGetMouseButton(window.getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
                 if (leftDown && !lastMouseDown) {
                     lastMouseClickX = pixelX;
                     lastMouseClickY = pixelY;
@@ -398,11 +427,9 @@ public class ShaderRenderer {
             if (iFrameUniform != -1) {
                 GL20.glUniform1i(iFrameUniform, (int) frameCounter);
             }
-
             if (persistentFrameUniform != -1) {
                 GL20.glUniform1i(persistentFrameUniform, GlobalState.getFrame());
             }
-
             if (speedUniform != -1) {
                 GL20.glUniform1f(speedUniform, resolvePanoramaSpeed());
             }
@@ -427,40 +454,66 @@ public class ShaderRenderer {
                     GL20.glUniform1f(channelTimeUniforms[channel], currentTime);
                 }
             }
+
+            if (backbufferUniform != -1) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + 4);
+                canvas.read();
+                GL20.glUniform1i(backbufferUniform, 4);
+            }
+
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
-            // Log uniform values once per second
             if (frameCounter % 60 == 0) {
                 CanvasGLSL.LOG.info("Uniform values:");
                 CanvasGLSL.LOG.info("  time: {}", currentTime);
-                CanvasGLSL.LOG.info("  resolution: {}x{}", width, height);
+                CanvasGLSL.LOG.info("  resolution: {}x{}", targetWidth, targetHeight);
                 CanvasGLSL.LOG.info("  frame: {}", frameCounter);
             }
 
-            // Draw fullscreen quad
-            GL30.glBindVertexArray(vao);
-            GL11.glDrawArrays(GL11.GL_TRIANGLE_FAN, 0, 4);
-            GL30.glBindVertexArray(0);
+            quad.bind();
+            quad.draw();
+            FullscreenQuad.unbind();
 
             GL20.glUseProgram(0);
 
-            // Check for OpenGL errors after rendering
-            error = GL11.glGetError();
-            if (error != GL11.GL_NO_ERROR) {
-                CanvasGLSL.LOG.error("OpenGL error after render: {}", error);
-            }
-
-            if (frameCounter % 60 == 0) {
-                CanvasGLSL.LOG.info("=== END RENDER DEBUG ===");
+            int postError = GL11.glGetError();
+            if (postError != GL11.GL_NO_ERROR) {
+                CanvasGLSL.LOG.error("OpenGL error after render: {}", postError);
             }
 
             frameCounter++;
         } catch (Exception e) {
             CanvasGLSL.LOG.error("Error during shader rendering", e);
+        } finally {
+            // Restore blend state
+            GL14.glBlendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
+            GL20.glBlendEquationSeparate(prevBlendEqRgb, prevBlendEqAlpha);
+            if (blendEnabled) {
+                GL11.glEnable(GL11.GL_BLEND);
+            } else {
+                GL11.glDisable(GL11.GL_BLEND);
+            }
+            GL11.glDepthMask(depthMaskEnabled);
+            if (depthTestEnabled) {
+                GL11.glEnable(GL11.GL_DEPTH_TEST);
+            } else {
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+            }
+            if (cullEnabled) {
+                GL11.glEnable(GL11.GL_CULL_FACE);
+            } else {
+                GL11.glDisable(GL11.GL_CULL_FACE);
+            }
+            if (canvas != null) {
+                canvas.restore();
+            }
+            if (canvas != null) {
+                canvas.blit(alpha);
+            }
+            GL11.glViewport(prevViewportX, prevViewportY, prevViewportWidth, prevViewportHeight);
         }
     }
-
     private float resolvePanoramaSpeed() {
         if (!panoramaSpeedChecked) {
             panoramaSpeedChecked = true;
@@ -517,13 +570,13 @@ public class ShaderRenderer {
                 channelTextures[i] = 0;
             }
         }
-        if (vbo != -1) {
-            GL20.glDeleteBuffers(vbo);
-            vbo = -1;
+        if (quad != null) {
+            quad.close();
+            quad = null;
         }
-        if (vao != -1) {
-            GL30.glDeleteVertexArrays(vao);
-            vao = -1;
+        if (canvas != null) {
+            canvas.close();
+            canvas = null;
         }
         glResourcesInitialized = false;
     }

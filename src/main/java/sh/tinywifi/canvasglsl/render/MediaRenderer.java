@@ -2,12 +2,14 @@ package sh.tinywifi.canvasglsl.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.util.Identifier;
 import org.jetbrains.annotations.Nullable;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL14;
 import sh.tinywifi.canvasglsl.CanvasGLSL;
 import sh.tinywifi.canvasglsl.media.MediaEntry;
 import sh.tinywifi.canvasglsl.media.MediaType;
@@ -54,7 +56,7 @@ public final class MediaRenderer {
             imageWidth = image.getWidth();
             imageHeight = image.getHeight();
 
-            texture = new NativeImageBackedTexture(image);
+            texture = new NativeImageBackedTexture(() -> "canvasglsl_media", image);
 
             MinecraftClient client = MinecraftClient.getInstance();
             if (textureId != null) {
@@ -72,7 +74,9 @@ public final class MediaRenderer {
     }
 
     public void render(DrawContext context, int screenWidth, int screenHeight, float alpha) {
-        if (texture == null || textureId == null) return;
+        if (texture == null || textureId == null) {
+            return;
+        }
 
         float screenAspect = (float) screenWidth / (float) screenHeight;
         float imageAspect = imageWidth > 0 && imageHeight > 0 ? (float) imageWidth / (float) imageHeight : 1f;
@@ -94,14 +98,32 @@ public final class MediaRenderer {
         int y = Math.round((screenHeight - drawHeight) * 0.5f);
 
         RenderSystem.assertOnRenderThread();
-        RenderSystem.disableDepthTest();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
-        context.drawTexture(RenderLayer::getGuiTextured, textureId, x, y, 0f, 0f, drawW, drawH, imageWidth, imageHeight);
-        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
-        RenderSystem.disableBlend();
-        RenderSystem.enableDepthTest();
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+
+        float clampedAlpha = Math.max(0f, Math.min(1f, alpha));
+        int alphaByte = Math.round(clampedAlpha * 255f) & 0xFF;
+        int color = (alphaByte << 24) | 0x00FFFFFF;
+
+        context.drawTexture(
+            RenderPipelines.GUI_TEXTURED,
+            textureId,
+            x,
+            y,
+            0f,
+            0f,
+            drawW,
+            drawH,
+            imageWidth,
+            imageHeight,
+            imageWidth,
+            imageHeight,
+            color
+        );
+
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
     }
 
     public void unload() {
