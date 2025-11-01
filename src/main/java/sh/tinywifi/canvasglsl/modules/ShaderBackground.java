@@ -118,7 +118,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
             flushQueuedCompile(shaderRenderer);
         } else {
             logDiagnostic("Render thread not available yet; scheduling compile flush");
-            RenderSystem.recordRenderCall(() -> {
+            RenderSystem.queueFencedTask(() -> {
                 ShaderRenderer shaderRenderer = getOrCreateRenderer();
                 logDiagnostic("Render thread compile flush scheduled (rendererPresent={})", shaderRenderer != null);
                 flushQueuedCompile(shaderRenderer);
@@ -173,7 +173,7 @@ public class ShaderBackground implements ShaderChangeListener, MediaChangeListen
         if (RenderSystem.isOnRenderThread()) {
             toCleanup.cleanup();
         } else {
-            RenderSystem.recordRenderCall(toCleanup::cleanup);
+            RenderSystem.queueFencedTask(toCleanup::cleanup);
         }
     }
 

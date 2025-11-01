@@ -81,9 +81,6 @@ public final class ShaderIDEViewport {
             editorState.getTheme().apply();
             themeApplied = true;
         }
-
-        // Defensively ensure alpha is correct every frame in case style gets reset
-        ImGui.getStyle().setAlpha(1.0f);
     }
 
     public void renderUI(float width, float height) {
@@ -93,9 +90,6 @@ public final class ShaderIDEViewport {
 
         ImGui.setNextWindowSize(width * 0.75f, height * 0.8f, ImGuiCond.Once);
         ImGui.setNextWindowPos(width * 0.125f, height * 0.1f, ImGuiCond.Once);
-
-        // Force window background to be drawn (disable NoBackground flag)
-        ImGui.setNextWindowBgAlpha(1.0f);
 
         int windowFlags = ImGuiWindowFlags.MenuBar | ImGuiWindowFlags.NoCollapse;
         String windowLabel = (editorState.hasUnsavedChanges() ? "* " : "") + WINDOW_TITLE + "###ShaderIDE";
