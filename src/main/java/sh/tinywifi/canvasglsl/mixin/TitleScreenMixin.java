@@ -36,21 +36,22 @@ public abstract class TitleScreenMixin extends Screen implements TitleScreenShad
             int fps = mc.getCurrentFps();
             String fpsText = fps + " FPS";
 
+            // Calculate position for top right corner
             int textWidth = mc.textRenderer.getWidth(fpsText);
-            int x = this.width - textWidth - 4;
-            int y = 4;
+            int x = this.width - textWidth - 2;  // 2 pixels from right edge
+            int y = 2;  // 2 pixels from top edge
 
-            // Draw FPS text with color based on performance and shadow for visibility
+            // Draw FPS text with bright color and shadow for visibility
             int color;
             if (fps >= 60) {
-                color = 0xFFFFFF; // White for high FPS
+                color = 0x55FF55; // Bright green
             } else if (fps >= 30) {
-                color = 0xFFFF00; // Yellow
+                color = 0xFFFF55; // Bright yellow
             } else {
-                color = 0xFF0000; // Red
+                color = 0xFF5555; // Bright red
             }
 
-            // Draw with shadow for better visibility against any background
+            // Draw with shadow for better visibility
             context.drawText(mc.textRenderer, fpsText, x, y, color, true);
         }
     }

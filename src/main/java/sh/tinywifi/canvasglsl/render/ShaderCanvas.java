@@ -163,14 +163,16 @@ public final class ShaderCanvas implements Closeable {
         GL20.glUseProgram(0);
         GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
+        // Restore blend state
+        GL14.glBlendFuncSeparate(prevSrcRgb, prevDstRgb, prevSrcAlpha, prevDstAlpha);
+        GL20.glBlendEquationSeparate(prevEqRgb, prevEqAlpha);
         if (blendEnabled) {
             GL11.glEnable(GL11.GL_BLEND);
         } else {
             GL11.glDisable(GL11.GL_BLEND);
         }
-        GL14.glBlendFuncSeparate(prevSrcRgb, prevDstRgb, prevSrcAlpha, prevDstAlpha);
-        GL20.glBlendEquationSeparate(prevEqRgb, prevEqAlpha);
 
+        // Restore depth state
         if (depthEnabled) {
             GL11.glEnable(GL11.GL_DEPTH_TEST);
         } else {

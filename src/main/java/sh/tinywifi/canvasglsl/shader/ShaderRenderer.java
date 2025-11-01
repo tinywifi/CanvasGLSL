@@ -474,22 +474,14 @@ public class ShaderRenderer {
         } catch (Exception e) {
             CanvasGLSL.LOG.error("Error during shader rendering", e);
         } finally {
-            // Restore all OpenGL state to prevent UI corruption
-            GL20.glUseProgram(0);
-            GL30.glBindVertexArray(0);
-
-            // Reset color mask to ensure UI renders correctly (critical!)
-            GL11.glColorMask(true, true, true, true);
-
-            // Unbind all textures
-            for (int i = 0; i < 5; i++) {
-                GL13.glActiveTexture(GL13.GL_TEXTURE0 + i);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            // Restore framebuffer and blit first
+            if (canvas != null) {
+                canvas.restore();
+                canvas.blit(alpha);
             }
 
-            // Restore previous texture bindings
-            GL13.glActiveTexture(prevActiveTexture);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture2D);
+            // Restore viewport
+            GL11.glViewport(prevViewportX, prevViewportY, prevViewportWidth, prevViewportHeight);
 
             // Restore blend state
             GL14.glBlendFuncSeparate(prevBlendSrcRgb, prevBlendDstRgb, prevBlendSrcAlpha, prevBlendDstAlpha);
@@ -499,26 +491,27 @@ public class ShaderRenderer {
             } else {
                 GL11.glDisable(GL11.GL_BLEND);
             }
+
+            // Restore depth state
             GL11.glDepthMask(depthMaskEnabled);
             if (depthTestEnabled) {
                 GL11.glEnable(GL11.GL_DEPTH_TEST);
             } else {
                 GL11.glDisable(GL11.GL_DEPTH_TEST);
             }
+
+            // Restore cull face
             if (cullEnabled) {
                 GL11.glEnable(GL11.GL_CULL_FACE);
             } else {
                 GL11.glDisable(GL11.GL_CULL_FACE);
             }
-            if (canvas != null) {
-                canvas.restore();
-            }
-            if (canvas != null) {
-                canvas.blit(alpha);
-            }
-            GL11.glViewport(prevViewportX, prevViewportY, prevViewportWidth, prevViewportHeight);
 
-            // Final cleanup - ensure program and VAO are unbound
+            // Restore texture state
+            GL13.glActiveTexture(prevActiveTexture);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture2D);
+
+            // Restore shader program
             GL20.glUseProgram(prevProgram);
             GL30.glBindVertexArray(prevVAO);
         }
