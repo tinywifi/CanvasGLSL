@@ -2,8 +2,6 @@
 
 <img src="https://raw.githubusercontent.com/tinywifi/CanvasGLSL/main/logo.png" width="128" height="128" />
 
-<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/KMdCm9JIzO0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
-
 Replace Minecraft's menu backgrounds with custom GLSL shaders. Includes a built-in shader editor with syntax highlighting.
 
 ## Features
