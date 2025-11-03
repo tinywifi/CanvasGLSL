@@ -1,5 +1,7 @@
 # CanvasGLSL
 
+<img src="https://raw.githubusercontent.com/tinywifi/CanvasGLSL/main/logo.png" width="128" height="128" />
+
 Replace Minecraft's menu backgrounds with custom GLSL shaders. Includes a built-in shader editor with syntax highlighting.
 
 ## Features
